@@ -1,0 +1,1 @@
+Thing I'm working on to help me learn how files are structured - various miscellaneous file parsers will be in here. Most of them won't work 60% of the time. All of them will use pure python. If for some reason you want to contribute to this monstrosity, feel free to make a pull request.
