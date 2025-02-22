@@ -249,15 +249,15 @@ class Frame(util.PacketDiss):
             print("Unknown frame tree name",treename)
 
 class IMF(util.DataFrame): #Internet Message Format
-    strs = util.DataFrame.strs.copy()
-    strs.update({"imf.content.type":"contenttype", #Content-Type
-                 "imf.date":"date", #Date
-                 "imf.from":"fro", #From
-                 "imf.message_id":"id", #Message-ID
-                 "imf.mime_version":"mime_ver", #MIME-Version
-                 "imf.subject":"subj", #Subject
-                 "imf.to":"to", #To
-                 "imf.user_agent":"useragent", #User-Agent
+    keyvals = util.DataFrame.keyvals.copy()
+    keyvals.update({"imf.content.type":("contenttype","str"), #Content-Type
+                    "imf.date":("date","str"), #Date
+                    "imf.from":("fro","str"), #From
+                    "imf.message_id":("id","str"), #Message-ID
+                    "imf.mime_version":("mime_ver","str"), #MIME-Version
+                    "imf.subject":("subj","str"), #Subject
+                    "imf.to":("to","str"), #To
+                    "imf.user_agent":("useragent","str"), #User-Agent
                  })
     def __init__(self, data, frame):
         super().__init__(data, frame)
@@ -265,8 +265,8 @@ class IMF(util.DataFrame): #Internet Message Format
         self.fros = {}
         self.tos = {}
     def doMoarInit(self):
-        for i in self.data.keys():
-            if i in self.strs:
+        for i in self.data:
+            if i in self.keyvals:
                 continue
             if i[0:4] == "imf.":
                 match i[4:]: #imf.X
@@ -346,8 +346,16 @@ class IMF(util.DataFrame): #Internet Message Format
         else:
             print("Unknown IMF tree",treename)
     
-    def __str__(self):
+    def __str__(self):#https://datatracker.ietf.org/doc/html/rfc5322
         builder = '-'*40+"IMF"+'-'*40+"\n"
+        builder += "Date: "+self.date+"\n\n"
+        builder += "From: "+self.fro+"\n"
+        builder += str(self.fros)+"\n\n"
+        builder += "To: "+self.to+"\n"
+        builder += str(self.tos)+"\n\n"
+        if "id" in self.__dict__:
+            builder += "Message-ID: "+self.id+"\n\n"
+        builder+= "Subject: "+self.subj+"\n"
         return builder
 
 class IpV4(util.DataFrame):

@@ -134,16 +134,31 @@ class EcPointExtension(GenericExtension): #ec_point_formats
     keyvals = GenericExtension.keyvals.copy()
     keyvals.update({"tls.handshake.extensions_ec_point_formats_length":("list_len","uint8"), #EC point formats Length
                  })
+    trees = GenericExtension.trees + ["tls.handshake.extensions_ec_point_formats"]
     typ = "ec_point_formats"
     def __init__(self, data, frame):
+        self.formats = []
         super().__init__(data, frame)
         for i in self.data:
             if i in self.keyvals:
                 continue
             match i:
                 case _:
-                    raise Exception("Unknown ec_point_formats key "+str(i))
-
+                    raise Exception("Unknown ec_point_formats key "+str(i)+" with value "+str(self.data[i]))
+    def doTree(self, tree, treename):
+        if treename == "tls.handshake.extensions_ec_point_formats":
+            for i in tree:
+                match i:
+                    case "tls.handshake.extensions_ec_point_format":
+                        if isinstance(tree[i], list):
+                            for j in tree[i]:
+                                self.formats.append(self.getInt(j))
+                        else:
+                            self.formats.append(self.getInt(tree[i]))
+                    case _:
+                        raise Exception(f"Unknown key in {treename} with keyval {i}")
+        else:
+            raise Exception(f"Unknown tree in {self.typ} with name {treename}")
 
 class SigAlgsExt(GenericExtension): #signature_algorithms
     typ = "signature_algorithms"
@@ -194,7 +209,7 @@ class Padding(GenericExtension): #padding
 
 
 class ETMExtension(GenericExtension):
-    typ = "encypt_then_mac"
+    typ = "encrypt_then_mac"
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
