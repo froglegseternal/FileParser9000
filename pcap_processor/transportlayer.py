@@ -4,18 +4,25 @@ import tls_helpers.extensions as thelp
 class TLSHandshake(util.DataFrame):
     keyvals = util.DataFrame.keyvals.copy()
     keyvals.update({"tls.handshake.cipher_suites_length": ("ciph_suit_len","uint16"), #Cipher Suites Length
+                    "tls.handshake.ciphersuite":("ciphsuite","uint16"), #Cipher Suite
+                    "tls.handshake.comp_method":("compmeth","uint8"), #Compression Method
                  "tls.handshake.comp_methods_length":("compmeth_len","uint8"), #Compression Methods Length
                  "tls.handshake.extensions_length":("ext_len","uint16"), #Extensions Length
                  "tls.handshake.length":("hs_len","uint24"), #Length
                  "tls.handshake.session_id_length":("sessid_len","uint16"), #Session ID Length
                  "tls.handshake.type":("handtype","uint8"), #Handshake Type
-                 "tls.handshake.version":("ver","uint16"), #Version (uint16)
+                 "tls.handshake.version":("ver","uint16"), #Version
                  "tls.handshake.ja3":("ja3","str"), #JA3
                  "tls.handshake.ja3_full":("ja3_full","str"), #JA3 Fullstring
                  "tls.handshake.ja3s":("ja3s","str"), #JA3S
                  "tls.handshake.ja3s_full":("ja3s_full","str"), #JA3S Fullstring
                  "tls.handshake.random":("rand","byteseq"), #Random
                  "tls.handshake.session_id":("sessid","byteseq"), #Session ID
+                    "TLS Session Ticket":({
+                        "tls.handshake.session_ticket":("ticket_bytes","byteseq"), #Session Ticket
+                        "tls.handshake.session_ticket_length":("ticket_len","uint16"), #Session Ticket Length
+                        "tls.handshake.session_ticket_lifetime_hint":("ticket_lifehint","uint32"), #Session Ticket Lifetime Hint
+                        },"tree")
                     })
     trees = util.DataFrame.trees + ["tls.handshake.ciphersuites", #Cipher Suites (Label)
                                     "tls.handshake.comp_methods", #Compression Methods (Label)
@@ -69,34 +76,11 @@ class TLSHandshake(util.DataFrame):
                         self.randtime = tree[i]
                     case _:
                         print("Unknown key in tls.handshake.random_tree", i)
-        elif treename == 'tls.handshake.sig_hash_alg_tree':
-            for i in tree:
-                match i:
-                    case 'tls.handshake.sig_hash_hash': #Signature Hash Algorithm Hash
-                        self.shah = int(tree[i])
-                    case 'tls.handshake.sig_hash_sig': #Signature Hash Algorithm Signature
-                        self.shag = int(tree[i])
-                    case _:
-                        print("Unknown key in tls.handshake_sig_hash_alg_tree", i)
-        elif treename == 'tls.handshake.sig_hash_algs': #Signature Algorithms
-            for i in tree:
-                match i:
-                    case 'tls.handshake.sig_hash_alg': #Signature Algorithm
-                        self.sha = int(tree[i],16)
-                    case 'tls.handshake.sig_hash_alg_tree':
-                        self.doTree(tree[i], i, self.sha)
-                    case _:
-                        print("Unknown key in tls.handshake.sig_hash_algs tree", i)
+        elif treename == "TLS Session Ticket":
+            print(tree)
+            raise Exception("LOL")
         elif treetype == "Extension":
             self.exts[treename] = thelp.ext_mapping[self.getInt(tree['tls.handshake.extension.type'])](tree, self.framenum)
-            #for i in tree:
-            #    match i:
-            #        case 'tls.handshake.sig_hash_alg_len':
-            #            self.exts[treename]["sha_len"] = int(tree[i])
-            #        case 'tls.handshake.sig_hash_algs':
-            #            self.doTree(tree[i], i)
-            #        case _:
-            #            print("Unknown key in tls extension tree", treename, i)
         else:
             print("Unknown TLS Handshake tree", treename)
 

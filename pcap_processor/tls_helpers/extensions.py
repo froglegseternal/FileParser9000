@@ -162,6 +162,14 @@ class EcPointExtension(GenericExtension): #ec_point_formats
 
 class SigAlgsExt(GenericExtension): #signature_algorithms
     typ = "signature_algorithms"
+    keyvals = GenericExtension.keyvals.copy()
+    keyvals.update({"tls.handshake.sig_hash_alg":("sha_alg","uint16"), #Signature Algorithm
+                    "tls.handshake.sig_hash_alg_len":("sha_len","uint16"), #Signature Hash Algorithms Length
+                    "tls.handshake.sig_hash_algs":({
+                        "tls.handshake.sig_hash_alg":("sha_alg2","uint16"),
+                        "tls.handshake.sig_hash_alg_tree":({},"Specialtree")
+                        },"tree"), #Signature Algorithms
+                    })
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
@@ -170,6 +178,21 @@ class SigAlgsExt(GenericExtension): #signature_algorithms
             match i:
                 case _:
                     print("Unknown SigAlgsExt key", i)
+
+    def __str__(self):
+        builder = super().__str__()
+        try: builder += "sha_alg: "+str(self.sha_alg)+"\n"
+        except: pass
+        builder += "sha_len: "+str(self.sha_len)+"\n"
+        builder += "sha_alg2: "+str(self.sha_alg2)+"\n"
+        builder += "shas: "+str(self.shas)+"\n"
+        return builder
+
+    def doTree(self, tree, treename):
+        if treename == "tls.handshake.sig_hash_algs":
+            self.shas = tree
+        else:
+            raise Exception(f"Unknown treename {treename}")
 
 class AppLayerProtoNego(GenericExtension): #application_layer_protcol_negotiation
     keyvals = GenericExtension.keyvals.copy()
@@ -282,19 +305,57 @@ class PSKExt(GenericExtension):
 
 class SuppVersions(GenericExtension): #supported_versions
     typ = "supported_versions"
+    keyvals = GenericExtension.keyvals.copy()
+    keyvals.update({"tls.handshake.extensions.supported_version":("vers","uint16"), #Supported Version
+                    "tls.handshake.extensions.supported_versions_len":("supplen","uint8"), #Supported Versions length
+                    })
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
             if i in self.keyvals:
+                if i == "tls.handshake.extensions.supported_versions_len":
+                    self.supplen = self.supplen // 2
                 continue
             match i:
                 case _:
                     print("Unknown SuppVersions key", i)
+    
+    def __str__(self):
+        builder = super().__str__()
+        try: builder += "Length: "+str(self.supplen)+"\n"
+        except: builder += "Length: "+str(self.len// 2)+"\n"
+        if isinstance(self.vers, int):
+            builder += "Supported Version: "+self.getVersion(self.vers)+"\n"
+        elif self.supplen < 0:
+            raise Exception("A length value should never be less than zero. Maybe check type conversions?")
+        elif self.supplen == 0:
+            pass
+        elif self.supplen >= 2:
+            builder += "Supported Versions: "
+            for i in range(self.supplen):
+                builder += self.getVersion(self.vers[i])
+                if i+1 < self.supplen:
+                    builder += ", "
+        return builder
 
+    versions = {0x300: "SSL 3.0",
+               0x301: "TLS 1.0",
+               0x302: "TLS 1.1",
+               0x303: "TLS 1.2",
+               0x304: "TLS 1.3"}
+    def getVersion(self, vers):
+        if vers in self.versions:
+            return self.versions[vers]
+        else:
+            return "Unknown ("+hex(vers)+")"
 
 
 class PSKModes(GenericExtension): #psk_key_exchange_modes
     typ = "psk_key_exchange_modes"
+    keyvals = GenericExtension.keyvals.copy()
+    keyvals.update({"tls.extension.psk_ke_mode":("ke_mode","uint8"), #PSK Key Exchange Mode
+                    "tls.extension.psk_ke_modes_length":("ke_len","uint8"), #PSK Key Exchange Modes Length
+                    })
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
@@ -303,11 +364,26 @@ class PSKModes(GenericExtension): #psk_key_exchange_modes
             match i:
                 case _:
                     print("Unknown PSKModes key", i)
-
+    def __str__(self):
+        builder = super().__str__()
+        builder += "PSK Key Exchange Modes Length: "+str(self.ke_len)+"\n"
+        if self.ke_len < 0:
+            raise Exception("Invalid value")
+        elif self.ke_len == 0:
+            raise Exception("Unimplemented")
+        elif self.ke_len == 1:
+            builder += "PSK Key Exchange Mode: "+str(self.ke_mode)+"\n"
+        elif self.ke_len > 1:
+            raise Exception("Unimplemented")
+        return builder
 
 
 class KeyShare(GenericExtension): #key_share
     typ = "key_share"
+    keyvals = GenericExtension.keyvals.copy()
+    keyvals.update({"Key Share extension":({
+        "tls.handshake.extensions_key_share_client_length":("client_len","uint16"), #Client Key Share Length
+        },"tree")})
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
@@ -335,7 +411,10 @@ class GREASEExtension(GenericExtension):
 class RenegoExtension(GenericExtension): #renegotation_info
     typ = "renegotiation_info"
     keyvals = GenericExtension.keyvals.copy()
-    keyvals.update({"Renegotiation Info extension":({},"tree")})
+    keyvals.update({"Renegotiation Info extension":({
+        "tls.handshake.extensions_reneg_info":("reneg_info_bytes", "byteseq"),
+        "tls.handshake.extensions_reneg_info_len":("renego_len","uint8")
+        },"tree")})
     def __init__(self, data, frame):
         super().__init__(data, frame)
         for i in self.data:
@@ -344,7 +423,15 @@ class RenegoExtension(GenericExtension): #renegotation_info
             match i:
                 case _:
                     print("Unknown RenegotiationExtension key", i)
-
+    def __str__(self):
+        builder = super().__str__()
+        builder += "Length: "+str(self.renego_len)+"\n"
+        try:
+            builder += "Data: "+str(self.reneg_info_bytes)+"\n"
+        except:
+            assert self.renego_len == 0, "There is data but wireshark didn't report it back."
+            builder += "Data: None or unreadable."
+        return builder
 
 #https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml
 ext_mapping = {0: ServerNameExtension,

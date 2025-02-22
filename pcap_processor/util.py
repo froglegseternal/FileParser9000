@@ -110,15 +110,19 @@ class DataFrame(PacketDiss):
             if i not in keytree:
                 print("Unknown key in tree", treename, "with key", i)
             elif "uint" in keytree[i][1]:
-                    self.assignValue(keytree[i][0], self.getInt(tree[i],i,keytree),keytree, i)
+                self.assignValue(keytree[i][0], self.getInt(tree[i],i,keytree),keytree, i)
             elif "tree" == keytree[i][1]:
-                    self.doTreeBetter(tree[i], keytree[i][0], i)
+                self.doTreeBetter(tree[i], keytree[i][0], i)
             elif "byteseq" == keytree[i][1]:
-                    self.__dict__[keytree[i][0]] = unpackByteSequence(tree[i])
+                self.__dict__[keytree[i][0]] = unpackByteSequence(tree[i])
             elif "str" == keytree[i][1]:
-                    self.assignValue(keytree[i][0], self.getStr(tree[i],i),keytree,i)
+                self.assignValue(keytree[i][0], self.getStr(tree[i],i),keytree,i)
             elif "bool" == keytree[i][1]:
-                    self.__dict__[keytree[i][0]] = bool(int(tree[i]))
+                self.__dict__[keytree[i][0]] = bool(int(tree[i]))
+            elif "Specialtree" == keytree[i][1]:
+                self.doTree(tree, treename)
+            else:
+                raise Exception("Unimplemented")
 
     def getInt(self, integer, parent=None, keytree=None):
         if isinstance(integer, int) or isinstance(integer, str):
@@ -144,6 +148,7 @@ class DataFrame(PacketDiss):
             tmp = integer
             for i in range(len(tmp)):
                 tmp[i] = self.getInt(tmp[i])
+            return tmp
         else:
             print(integer)
             print(type(integer))
