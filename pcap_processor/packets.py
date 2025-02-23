@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument('--lldp', help='Whether to print LLDP information', action='store_true')
     parser.add_argument('--llmnr', help='Whether to print LLMNR information', action='store_true')
     parser.add_argument('--mdns', help='Whether to print MDNS information', action='store_true')
-    parser.add_argument('--ntp', help='Whether to print NTP information', action='store_true')
+    parser.add_argument('-ad', '--activedirectory', help='Whether to print Active-Directory related information', action='store_true')
     parser.add_argument('--smtp', help='Whether to print SMTP information', action='store_true')
     parser.add_argument('--ssdp', help='Whether to print SSDP information', action='store_true')
     parser.add_argument('--xml', help='Whether to print XML information', action='store_true')
@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--ethernet', help='Whether to print ethernet information', action="store_true")
     parser.add_argument('--frame', help='Whether to print frame metadata', action='store_true')
     parser.add_argument('--ipdata', help='Whether to print IP Data information', action='store_true')
+    parser.add_argument('--kerb', help="Whether to print kerberos information", action="store_true")
     parser.add_argument('--tcp', help='Whether to print TCP information', action='store_true')
     parser.add_argument('--tls', help='Whether to print TLS information', action='store_true')
     parser.add_argument('--udp', help='Whether to print UDP information', action='store_true')
@@ -58,6 +59,10 @@ if args.dhcp or args.dns or args.llmnr or args.mdns:
 
 if args.http or args.icmp or args.igmp or args.ssdp:
     import internet
+
+if args.activedirectory:
+    import activedirectory as ad
+    import resolution
 
 class Ethernet(util.DataFrame):
     keyvals = util.DataFrame.keyvals.copy()
@@ -360,19 +365,21 @@ class IMF(util.DataFrame): #Internet Message Format
 
 class IpV4(util.DataFrame):
     typ = "IpV4"
-    trees = util.DataFrame.__dict__['trees'] + ['ip.dsfield_tree', 'ip.flags_tree',  'ip.ttl_tree']
-    ints = util.DataFrame.__dict__['ints'].copy()
-    ints.update({"ip.checksum":"check", #Header Checksum (uint16)
-                    "ip.checksum.status":"checkstat", #Header checksum status (uint8)
-                    "ip.dsfield": "dsfield", #Differentiated Services Field (uint8)
-                    "ip.flags": "root_flags", #Flags (uint8)
-                    "ip.frag_offset": "frag_off", #Fragment Offset (uint16)
-                    "ip.id": "id", #Identification (uint16)
-                    "ip.version": "ver", #Version (uint8)
-                    "ip.hdr_len": "hdr_len", #Header Length (uint8)
-                    "ip.len": "len", #Total Length (uint16)
-                    "ip.proto": "proto", #Protocol (uint8)
-                    "ip.ttl": "ttl" #Time to Live (uint8)
+    keyvals = util.DataFrame.keyvals.copy()
+    keyvals.update({"ip.checksum":("check","uint16"), #Header Checksum (uint16)
+                    "ip.checksum.status":("checkstat","uint8"), #Header checksum status (uint8)
+                    "ip.dsfield":("dsfield","uint8"), #Differentiated Services Field (uint8)
+                    "ip.flags":("root_flags","uint8"), #Flags (uint8)
+                    "ip.frag_offset":("frag_off","uint16"), #Fragment Offset (uint16)
+                    "ip.id":("id","uint16"), #Identification (uint16)
+                    "ip.version":("ver","uint8"), #Version (uint8)
+                    "ip.hdr_len":("hdr_len","uint8"), #Header Length (uint8)
+                    "ip.len":("len","uint16"), #Total Length (uint16)
+                    "ip.proto":("proto","uint8"), #Protocol (uint8)
+                    "ip.ttl":("ttl","uint8"), #Time to Live (uint8)
+                    "ip.dsfield_tree":"Specialtree",
+                    "ip.flags_tree":"Specialtree",
+                    "ip.ttl_tree":"Specialtree"
                     })
     strs = util.DataFrame.__dict__['strs'].copy()
     strs.update({"ip.dst_host":"dst_host", #Destination Host
@@ -387,6 +394,8 @@ class IpV4(util.DataFrame):
         if self.typ == "IpV4":
             data = self.data
         for i in data:
+            if i in self.keyvals:
+                continue
             if i not in self.trees and i not in self.ints and i not in self.strs:
                 match i[3:]: #ip.X
                     case "addr": #Source or Destination address (IPv4 address)
@@ -556,13 +565,15 @@ class IpV4(util.DataFrame):
 
 class IpV6(IpV4): #Internet Protocol Version 6
     typ = "IpV6"
-    ints = IpV4.__dict__["ints"].copy()
-    ints.update({"ipv6.tclass":"tclass", #Traffic Class (uint32)
-        "ipv6.version":"ver", #Version (uint8)
-        "ipv6.flow": "flow", #Flow Label (uint24)
-                 "ipv6.hlim": "hlim", #Hop Limit (uint8)
-                 "ipv6.nxt": "nxt", #Next Header (uint8)
-        "ipv6.plen": "plen" #Payload Length (uint16)
+    keyvals = IpV4.keyvals.copy()
+    keyvals.update({"ipv6.tclass":("tclass","uint32"), #Traffic Class (uint32)
+                    "ipv6.version":("ver","uint8"), #Version (uint8)
+                    "ipv6.flow":("flow","uint24"), #Flow Label (uint24)
+                    "ipv6.hlim":("hlim","uint8"), #Hop Limit (uint8)
+                    "ipv6.nxt":("nxt","uint8"), #Next Header (uint8)
+                    "ipv6.plen":("plen","uint16"), #Payload Length (uint16)
+                    "ipv6.hopopts":"Specialtree", #Hop-by-Hop Options
+                    "ipv6.tclass_tree":"Specialtree",
         })
     strs = IpV4.__dict__["strs"].copy()
     strs.update({"ipv6.dst_host":"dst_host", #Destination Host
@@ -576,8 +587,6 @@ class IpV6(IpV4): #Internet Protocol Version 6
                        })
     framerefs = IpV4.__dict__["framerefs"].copy()
     framerefs.update({})
-    trees = IpV4.__dict__["trees"] + ["ipv6.hopopts", #Hop-by-Hop Options
-                                    "ipv6.tclass_tree"]
     def __init__(self, data, frame):
         super().__init__(data, frame)
     def doMoarInit(self):
@@ -921,6 +930,7 @@ layers = {
         'arp': None,
         'data': util.Data,
         'data-text-lines': util.Data,
+        'dcerpc': None,
         'dhcp': None,
         'dns': None,
         'eth': Ethernet,
@@ -932,13 +942,17 @@ layers = {
         'imf': IMF,
         'ip': IpV4,
         'ipv6': IpV6,
+        'kerberos': util.krbpacket,
         'lldp': None,
         'llmnr': None,
         'mdns': None,
         'mime_multipart': util.MIME,
         'nbns': None,
+        'nbss': None,
         'ntp': NTP,
         'quic': None,
+        'smb': None,
+        'smb2': None,
         'smtp': SMTP,
         'ssdp': None,
         'tcp': None,
@@ -949,6 +963,13 @@ layers = {
         "xml": XML
         }
 
+
+if args.activedirectory:
+    layers['dcerpc'] = ad.DCERPC
+    layers['smb2'] = ad.SMB2
+    layers['smb'] = ad.SMB
+    layers['nbns'] = resolution.NBNS
+    layers['nbss'] = ad.NBSS
 
 if args.arp:
     layers['arp'] = linklayer.ARP
@@ -1027,9 +1048,7 @@ class PacketUnit():
             elif i == 'dns' and args.dns:
                 self.dns.doMoarInit()
                 print(self.dns)
-            elif i == 'nbns' and args.dns:
-                self.nbns.doMoarInit()
-                print(self.nbns)
+            
             elif i == 'eth' and args.ethernet:
                 self.eth.doMoarInit()
                 print(self.eth)
@@ -1059,6 +1078,9 @@ class PacketUnit():
                 print(self.ip)
             elif i == 'ipv6' and (args.ipdata or args.udp):
                 self.ipv6.doMoarInit()
+            elif i == 'kerberos' and args.kerb:
+                self.kerberos.doMoarInit()
+                print(self.kerberos)
             elif i == 'lldp' and args.lldp:
                 self.lldp.doMoarInit()
                 print(self.lldp)
@@ -1068,9 +1090,28 @@ class PacketUnit():
             elif i == 'mdns' and args.mdns:
                 self.mdns.doMoarInit()
                 print(self.mdns)
-            elif i == 'ntp' and args.ntp:
-                self.ntp.doMoarInit()
-                print(self.ntp)
+            elif args.activedirectory:
+                if i == 'dcerpc':
+                    self.dcerpc.doMoarInit()
+                    print(self.dcerpc)
+                elif i == 'nbns' and not args.dns:
+                    self.nbns.doMoarInit()
+                    print(self.nbns)
+                elif i == 'nbss':
+                    self.nbss.doMoarInit()
+                    print(self.nbss)
+                elif i == 'ntp':
+                    self.ntp.doMoarInit()
+                    print(self.ntp)
+                elif i == 'smb':
+                    self.smb.doMoarInit()
+                    print(self.smb)
+                elif i == 'smb2':
+                    self.smb2.doMoarInit()
+                    print(self.smb2)
+            elif i == 'nbns' and args.dns:
+                self.nbns.doMoarInit()
+                print(self.nbns)
             elif i == 'ssdp' and args.ssdp:
                 self.ssdp.doMoarInit()
                 print(self.ssdp)

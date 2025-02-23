@@ -666,7 +666,7 @@ class TCP(util.DataFrame): #Transmission Control Protocol
         builder += " | Window size (calculated by wireshark): " + str(self.windsize)+ "\n"
         builder += "Checksum: " + str(self.check) + " (Status: "+str(self.checkstat)+")" + " | Urgent Pointer: " + str(self.urgpoint)+ "\n"
         if self.hdr_len > 20:
-            raise Exception("Unimplemented TCP Header Length")
+            builder += str(self.opt)+"\n"
         if "payload" in self.__dict__:
             builder += " "*10 + "DATA"+"\n"
             builder += str(self.payload)
@@ -683,7 +683,7 @@ class TCP(util.DataFrame): #Transmission Control Protocol
                     case 'tcp.connection.syn': #Connection establish request (SYN) (Label)
                         self.type = "SYN"
                     case _:
-                        print("Unknown key in tcp expert key",i,"packet proto is TCP.")
+                        print("Unknown key in tcp expert key",i,"packet proto is TCP, value is",tree[i])
         elif treename == 'tcp.analysis': #SEQ/ACK analysis (Label)
             for i in tree:
                 match i[13:]: #tcp.analysis.X

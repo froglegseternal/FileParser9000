@@ -47,11 +47,11 @@ class PacketDiss():
             case "":
                 self.wsbase[number] = value
             case _:
-                print(f"Unknown wireshark expert key {key} with value {value}")
+                raise Exception(f"Unknown wireshark expert key {key} with value {value}")
     def doProcessMalformed(self, key, value):
         match key[14:] : #_ws.malformed.X
             case _:
-                print(f"Unknown wireshark malformed packet key {key} with value {value}")
+                raise Exception(f"Unknown wireshark malformed packet key {key} with value {value}")
     def doCheck(self):
         pass
 
@@ -68,18 +68,41 @@ class DataFrame(PacketDiss):
         super().__init__(data)
         self.framenum = int(frame)
         self.keyvals = self.keyvals.copy()
+        if set(data.keys()) > set(self.keyvals.keys()):
+            try: raise Exception("Unimplemented key values")
+            finally:
+                for i in self.data:
+                    if i not in self.keyvals:
+                        print("Value not in mapping", i, "in class", type(self)) 
         for i in self.keyvals:
             if i in data:
                 if "uint" in self.keyvals[i][1]:
                     self.assignValue(self.keyvals[i][0], self.getInt(data[i],i,self.keyvals),self.keyvals, i)
+                elif "int" in self.keyvals[i][1]:
+                    self.assignValue(self.keyvals[i][0], self.getInt(data[i], i, self.keyvals,signed=True),self.keyvals, i)
                 elif "tree" == self.keyvals[i][1]:
                     self.doTreeBetter(data[i], self.keyvals[i][0], i)
                 elif "byteseq" == self.keyvals[i][1]:
+                    if self.keyvals[i][0] not in self.__dict__:
+                        self.__dict__[self.keyvals[i][0]] = unpackByteSequence(data[i])
+                    else:
+                        if not isinstance(self.__dict__[self.keyvals[i][0]],list):
+                            self.__dict__[self.keyvals[i][0]] = [self.__dict__[self.keyvals[i][0]]]
+                        self.__dict__[self.keyvals[i][0]].append(unpackByteSequence(data[i]))
                     self.__dict__[self.keyvals[i][0]] = unpackByteSequence(data[i])
-                elif "str" == self.keyvals[i][1]:
+                elif "str" == self.keyvals[i][1] or "datetime" == self.keyvals[i][1]:
                     self.assignValue(self.keyvals[i][0], self.getStr(data[i],i),self.keyvals,i)
                 elif "bool" == self.keyvals[i][1]:
                     self.__dict__[self.keyvals[i][0]] = bool(int(data[i]))
+                elif "Specialtree" == self.keyvals[i]:
+                    self.doTree(data[i], i)
+                elif "subtype" == self.keyvals[i][1]:
+                    if self.keyvals[i][0] not in self.__dict__:
+                        self.__dict__[self.keyvals[i][0]] = self.keyvals[i][2](data[i])
+                    else:
+                        if not isinstance(self.__dict__[self.keyvals[i][0]],list):
+                            self.__dict__[self.keyvals[i][0]] = [self.__dict__[self.keyvals[i][0]]]
+                        self.__dict__[self.keyvals[i][0]].append(self.keyvals[i][2](data[i]))
                 else:
                     raise Exception("Unimplemented keyval type "+self.keyvals[i][1])
         for i in self.ints:
@@ -87,12 +110,12 @@ class DataFrame(PacketDiss):
             if i in data:
                 self.assignValue(self.ints[i], self.getInt(data[i],i),self.ints, i)
         for i in self.trees:
-            self.keyvals.update({i: (i,"tree")})
+            self.keyvals.update({i: "Specialtree"})
             if i in data:
                 self.doTree(data[i], i)
         for i in self.byteseqs:
             self.keyvals.update({i: (self.byteseqs[i],"byteseq")})
-            if i in data:    
+            if i in data:
                 self.__dict__[self.byteseqs[i]] = unpackByteSequence(data[i])
         for i in self.ipv6_addrs:
             self.keyvals.update({i: (self.ipv6_addrs[i], "ipv6_addr")})
@@ -111,6 +134,8 @@ class DataFrame(PacketDiss):
                 print("Unknown key in tree", treename, "with key", i)
             elif "uint" in keytree[i][1]:
                 self.assignValue(keytree[i][0], self.getInt(tree[i],i,keytree),keytree, i)
+            elif "int" in keytree[i][1]:
+                self.assignValue(keytree[i][0], self.getInt(tree[i],i,keytree,signed=True),keytree, i)
             elif "tree" == keytree[i][1]:
                 self.doTreeBetter(tree[i], keytree[i][0], i)
             elif "byteseq" == keytree[i][1]:
@@ -119,12 +144,28 @@ class DataFrame(PacketDiss):
                 self.assignValue(keytree[i][0], self.getStr(tree[i],i),keytree,i)
             elif "bool" == keytree[i][1]:
                 self.__dict__[keytree[i][0]] = bool(int(tree[i]))
-            elif "Specialtree" == keytree[i][1]:
+            elif "Specialtree" == keytree[i]:
                 self.doTree(tree, treename)
+            elif "subtype" == keytree[i][1]:
+                    if keytree[i][0] not in self.__dict__:
+                        if not isinstance(tree[i], list):
+                            self.__dict__[keytree[i][0]] = keytree[i][2](tree[i])
+                        else:
+                            self.__dict__[keytree[i][0]] = [keytree[i][2](x) for x in tree[i]]
+                    else:
+                        if not isinstance(self.__dict__[keytree[i][0]],list):
+                            self.__dict__[keytree[i][0]] = [self.__dict__[keytree[i][0]]]
+                        self.__dict__[keytree[i][0]].append(keytree[i][2](tree[i]))
+
             else:
                 raise Exception("Unimplemented")
 
-    def getInt(self, integer, parent=None, keytree=None):
+    def getInt(self, integer, parent=None, keytree=None, signed=False):
+        if (isinstance(integer, int) or isinstance(integer, str)) and signed:
+            if "0x" in integer:
+                return int.from_bytes(bytes.fromhex(integer[2:]), signed=True)
+            else:
+                return int(integer)
         if isinstance(integer, int) or isinstance(integer, str):
             if "x" in integer:
                 return int(integer, 16)
@@ -168,14 +209,34 @@ class DataFrame(PacketDiss):
         else:
             raise Exception("InvalidTypeException")
     def assignValue(self, parent, result, dictionary, key):
-        if result is not None:
+        if result is not None and parent not in self.__dict__:
             self.__dict__[parent] = result
+        elif parent in self.__dict__:
+            raise Exception("Unimplemented")
         else:
             pass
 
+class DataSubtype(DataFrame):
+    def __init__(self, data, frame=-1):
+        super().__init__(data, frame)
+
 class DNSRecord(DataFrame):
     keyvals = DataFrame.keyvals.copy()
-    keyvals.update({"dns.ptr.domain_name":("ptr_dom_name","str"), #Domain Name (Character strig)
+    keyvals.update({"dns.cname":("cname","str"), #CNAME
+                    "dns.mx.mail_exchange":("mxme","str"), #Mail Exchange
+                    "dns.ptr.domain_name":("ptr_dom_name","str"), #Domain Name (Character string)
+                    "dns.srv.name":("srvname","str"), #Name
+                    "dns.srv.proto":("srvproto","str"), #Protocol
+                    "dns.srv.service":("srvservice","str"), #Service
+                    "dns.srv.target":("srvtarget", "str"), #Target
+                    "nbns.name": ("name","str"), #Name
+                    "dns.count.labels":("labelcount","uint16"), #Label Count
+                    "dns.mx.preference":("mxpref","uint16"), #Preference
+                    "dns.srv.port":("srvport","uint16"), #Port
+                    "dns.srv.priority":("srvprior","uint16"), #Priority
+                    "dns.srv.weight":("srvweight","uint16"), #Weight
+                    "nbns.class":("clas","uint16"), #Class
+                    "nbns.type":("type","uint16"), #Type
                    })
     def __init__(self, key, value):
         self.key = key
@@ -190,58 +251,40 @@ class DNSRecord(DataFrame):
                     self.addr = tree[i]
                 case 'dns.aaaa': #AAAA Address (IPv6 address)
                     self.aaaa = tree[i]
-                case 'dns.count.labels': #Label Count (uint16)
-                    self.labelcount = int(tree[i])
-                case 'dns.cname': #CNAME (Character string)
-                    self.cname = tree[i]
-                case 'dns.mx.mail_exchange': #Mail Exchange (Character string)
-                    self.mxme = tree[i]
-                case 'dns.mx.preference': #Preference (uint16)
-                    self.mxpref = int(tree[i])
-                case 'dns.srv.name': #Name (Character string)
-                    self.srvname = tree[i]
-                case 'dns.srv.port': #Port (uint16)
-                    self.srvport = int(tree[i])
-                case 'dns.srv.priority': #Priority (uint16)
-                    self.srvprior = int(tree[i])
-                case 'dns.srv.proto': #Protocol (Character string)
-                    self.srvproto = tree[i]
-                case 'dns.srv.service': #Service (Character string)
-                    self.srvservice = tree[i]
-                case 'dns.srv.target': #Target (Character string)
-                    self.srvtarget = tree[i]
-                case 'dns.srv.weight': #Weight (uint16)
-                    self.srvweight = int(tree[i])
-                case 'nbns.class': #Class (uint16)
-                    self.clas = self.getInt(tree[i])
-                case 'nbns.name': #Name (Character string)
-                    self.name = tree[i]
-                case 'nbns.type': #Ttype (uint16)
-                    self.type = self.getInt(tree[i])
                 case _:
                     print("Unknown DNSRecord key", i)
 
 class DNSQuery(DNSRecord):
+    keyvals = DNSRecord.keyvals.copy()
+    keyvals.update({"dns.qry.class":("clas","uint16"), #Class
+                    "dns.qry.name.len":("name_len", "uint16"), #Name Length
+                    "dns.qry.type":("typ", "uint16"), #Type
+                    "dns.qry.name":("name", "str"), #Name
+                    "dns.qry.qu":("qu","bool"), #"QU" question
+                    })
     def doTree(self, tree, treename):
        super().doTree({x: tree[x] for x in tree if "dns.qry." not in x})
        for i in {x: tree[x] for x in tree if "dns.qry." in x}:
+           if i in self.keyvals:
+               continue
            match i[8:]:
-               case 'class': #Class (uint16)
-                   self.clas = int(tree[i],16)
-               case 'name': #Name (Character string)
-                   self.name = tree[i]
-               case 'name.len': #Name Length (uint16)
-                   self.name_len = int(tree[i])
-               case 'qu': #"QU" question (Boolean)
-                   self.qu = bool(int(tree[i]))
-               case 'type': #Type (uint16)
-                    self.typ = int(tree[i])
                case _:
                    print("Unknown DNSQuery key", i)
 
 class DNSAnswer(DNSRecord):
     keyvals = DNSRecord.keyvals.copy()
     keyvals.update({"dns.resp.cache_flush":("cache_flush","bool"), #Cache flush
+                    "dns.resp.z.do":("zdo","bool"), #DO bit
+                    "dns.resp.ttl":("ttl","uint32"), #Time to live
+                    "dns.resp.class":("clas","uint16"), #Class
+                    "dns.resp.len":("resp_len","uint16"), #Data Length
+                    "dns.resp.type":("typ","uint16"), #Type
+                    "dns.resp.z":("z","uint16"), #Z
+                    "dns.resp.z.reserved":("zreserv","uint16"), #Reserved
+                    "dns.resp.edns0_version":("ednsver","uint8"), #EDNS0 version
+                    "dns.resp.ext_rcode":("extrcode","uint8"), #Higher bits in extended RCODE
+                    "dns.resp.name":("name","str"), #Name
+                    "dns.resp.z_tree":"Specialtree",
                     })
     def doTree(self, tree, treename=None):
         super().doTree({x: tree[x] for x in tree if "dns.resp." not in x})
@@ -249,28 +292,6 @@ class DNSAnswer(DNSRecord):
             if i in self.keyvals:
                 continue
             match i[9:]:
-                case 'class': #Class (uint16)
-                    self.clas = int(tree[i],16)
-                case 'edns0_version': #EDNS0 version (uint8)
-                    self.ednsver = int(tree[i])
-                case 'ext_rcode': #Higher bits in extended RCODE (uint8)
-                    self.extrcode = int(tree[i],16)
-                case 'len': #Data Length (uint16)
-                    self.resp_len = int(tree[i])
-                case 'name': #Name (Character string)
-                    self.name = tree[i]
-                case 'ttl': #Time to live (uint32)
-                    self.ttl = int(tree[i])
-                case 'type': #Type (uint16)
-                    self.typ = int(tree[i])
-                case 'z': #Z (uint16)
-                    self.z = int(tree[i],16)
-                case 'z_tree': #???
-                    self.doTree(tree[i],i)
-                case 'z.do': #DO bit (Boolean)
-                    self.zdo = bool(int(tree[i]))
-                case 'z.reserved': #Reserved (uint16)
-                    self.zreser = int(tree[i],16)
                 case _:
                     print("Unknown DNSAnswer key", i)
 
@@ -282,29 +303,24 @@ class DNSAddRecord(DNSAnswer):
                 case 'udp_payload_size': #UDP payload size (uint16)
                     self.ups = int(tree[i])
                 case _:
-                    print("Unknown DNSAddRecord key", i)
+                    raise Exception(f"Unknown DNSAddRecord key {i}")
 
 class DNSAuth(DNSAnswer):
+    keyvals = DNSAnswer.keyvals.copy()
+    keyvals.update({"dns.soa.expire_limit":("explimit","uint32"), #Expire limit
+                    "dns.soa.minimum_ttl":("minttl","uint32"), #Minimum TTL
+                    "dns.soa.refresh_interval":("refint","uint32"), #Refresh Interval
+                    "dns.soa.retry_interval":("retint","uint32"), #Retry interval
+                    "dns.soa.serial_number":("serial","uint32"), #Serial Number
+                    "dns.soa.mname":("mname","str"), #Primary name server
+                    "dns.soa.rname":("rname","str"), #Responsible Authority's mailbox
+                    })
     def doTree(self, tree, treename):
         super().doTree({x: tree[x] for x in tree if "dns.soa." not in x})
         for i in {x: tree[x] for x in tree if "dns.soa." in x}:
             match i[8:]:
-                case 'expire_limit': #Expire limit (uint32)
-                    self.explimit = int(tree[i])
-                case 'minimum_ttl': #Minimum TTL (uint32)
-                    self.minttl = int(tree[i])
-                case 'mname': #Primary name server (Character string)
-                    self.mname = tree[i]
-                case 'refresh_interval': #Refresh Interval (uint32)
-                    self.refint = int(tree[i])
-                case 'retry_interval': #Retry interval (uint32)
-                    self.retint = int(tree[i])
-                case 'rname': #Responsible Authority's Mailbox (Character string)
-                    self.rname = tree[i]
-                case 'serial_number': #Serial Number (uint32)
-                    self.serial = int(tree[i])
                 case _:
-                    print("Unknown DNSAuth key", i)
+                    raise Exception(f"Unknown DNSAuth key "+i)
 
    
 class Data(DataFrame):
@@ -361,7 +377,7 @@ class Malformed(DataFrame):
 
 
 
-class MIME(DataFrame):
+class MIME(DataSubtype):
     def __init__(self, data, packet=-1):
         super().__init__(data, packet)
         self.headers = []
@@ -557,10 +573,185 @@ class krbblob():
         for i in tree:
             self[i] = tree[i]
 
-class ap_req(dict):
-    def __init__(self):
-        pass
+class sname(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.name_type":("name_type","int32"), #name-type
+                    "kerberos.sname_string":("string","uint32"), #sname-string
+                    "kerberos.sname_string_tree":({}, "tree"), #???
+                    })
 
-class ap_rep(dict):
-    def __init__(self):
-        pass
+class ap_req(DataSubtype):
+    pass
+
+class ap_rep(DataSubtype):
+    pass
+
+class padata(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.padata_type":("type","int32"), #padata-type
+                    "kerberos.padata_type_tree":({},"tree"), #???
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+class encData(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.cipher":("cipher","byteseq"), #cipher
+                    "kerberos.etype":("etype","int32"), #etype
+                    "kerberos.kvno":("kvno","uint32"), #kvno
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+class cname(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.cname_string":("string","uint32"), #cname-string
+                    "kerberos.cname_string_tree":({
+                            "kerberos.CNameString":("namestring","str"), #CNameString
+                        },"tree"), #???
+                    "kerberos.name_type":("name_type","int32"), #name-type
+                    "kerberos.enc_part_element":("elements","subtype",encData),
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+
+class ticket(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.realm":("realm","str"), #realm
+                    "kerberos.tkt_vno":("tkt_vno","uint32"), #tkt-vno
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+class as_rep(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.crealm":("crealm","str"), #crealm
+                    "kerberos.pvno":("pvno","uint32"), #pvno
+                    "kerberos.msg_type":("msg_type","int32"), #msg-type
+                    "kerberos.padata":("padata","uint32"), #padata
+                    "kerberos.padata_tree":({
+                        "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
+                        },"tree"),
+                    "kerberos.cname_element":("elements","subtype",cname),
+                    "kerberos.enc_part_element":("elements","subtype",encData),
+                    "kerberos.ticket_element":("elements","subtype",ticket),
+                    })
+
+class req_body(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.kdc_req_body":({},"tree") #KDC_REQ_BODY
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+
+class as_req(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.pvno":("pvno","uint32"), #pvno
+                    "kerberos.msg_type":("msg_type","int32"), #msg-type
+                    "kerberos.padata":("padata","uint32"), #padata
+                    "kerberos.padata_tree":({
+                        "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
+                        },"tree"),
+                    "kerberos.req_body_element":("elements","subtype",req_body), #req-body
+                    })
+    def __init__(self, data):
+        super().__init__(data)
+
+class krb_error(DataSubtype):
+    keyvals = DataSubtype.keyvals.copy()
+    keyvals.update({"kerberos.e_data":("e_data","byteseq"), #e-data
+                    "kerberos.e_data_tree":({},"tree"), #???
+                    "kerberos.pvno":("pvno","uint32"), #pvno 
+                    "kerberos.error_code":("error_code","int32"), #error-code
+                    "kerberos.msg_type":("msg_type","int32"), #msg-type
+                    "kerberos.susec":("susec","int32"), #susec
+                    "kerberos.realm":("realm","str"), #realm
+                    "kerberos.stime":("stime","datetime"), #stime
+                    "kerberos.sname_element":("elements","subtype",sname), #sname
+                    })
+
+
+
+class tgs_rep(DataFrame):
+    keyvals = DataFrame.keyvals.copy()
+    keyvals.update({"kerberos.pvno":("pvno","uint32"), #pvno
+                    "kerberos.msg_type":("msg_type","int32"), #msg-type
+                   "kerberos.crealm":("crealm","str"), #crealm
+                    "kerberos.cname_element":("cname","subtype",cname), #cname
+                    "kerberos.ticket_element":("ticket","subtype",ticket), #ticket
+                    "kerberos.enc_part_element":("enc_part","subtype",encData), #enc-part
+                    })
+    def __init__(self, data, frame=-1):
+        super().__init__(data, frame)
+    
+    def __str__(self):
+        builder = '-'*20 +"tgs_rep"+"-"*20+"\n"
+        builder += "PVNO: "+str(self.pvno)+"\n"
+        builder += "msg-type: "+str(self.msg_type)+"\n"
+        builder += "crealm: "+str(self.crealm)+"\n"
+        builder += "cname_element: "+str(self.cname)+"\n"
+        builder += "ticket_element: "+str(self.ticket)+"\n"
+        builder += "enc_part_element: "+str(self.enc_part)+"\n"
+        return builder
+
+class tgs_req(DataFrame):
+    keyvals = DataFrame.keyvals.copy()
+    keyvals.update({"kerberos.padata":("padata","uint32"), #padata
+                    "kerberos.pvno":("pvno","uint32"), #pvno
+                    "kerberos.msg_type":("msg_type","int32"), #msg-type
+                    "kerberos.padata_tree":({
+                        "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
+                        },"tree"),
+                    })
+    def __init__(self, data, frame=-1):
+        super().__init__(data, frame)
+    def __str__(self):
+        builder = '-'*20 +"tgs_rep"+"-"*20+"\n"
+        builder += "PVNO: "+str(self.pvno)+"\n"
+        builder += "msg-type: "+str(self.msg_type)+"\n"
+        builder += "padata: "+str(self.padata)+"\n"
+        builder += "padata_s: "+str(self.padata_s)+"\n"
+        if isinstance(self.elements, list):
+            for i in self.elements:
+                builder += "Element: "+str(i)+"\n"
+        else:
+            builder += "Element: "+str(self.elements)+"\n"
+        return builder
+
+
+
+class krbpacket(DataFrame):
+    typ = "kerberos"
+    keyvals = DataFrame.keyvals.copy()
+    keyvals.update({"kerberos.as_rep_element":("elements","subtype",as_rep), #as-rep
+                    "kerberos.as_req_element":("elements","subtype",as_req), #as-req
+                    "kerberos.krb_error_element":("elements","subtype",krb_error), #???
+                    "kerberos.req_body_element":("elements","subtype",req_body), #req-body
+                    "kerberos.tgs_rep_element":("elements","subtype",tgs_rep), #tgs-rep
+                    "kerberos.tgs_req_element":("elements","subtype",tgs_req), #tgs-req
+                    })
+    def __init__(self, data, packet):
+        self.elements = ['']
+        self.marks = []
+        super().__init__(data, packet)
+    def __str__(self):
+        builder = '-'*45 + "KERBEROS" + "-"*45 + "\n"
+        for i in self.marks:
+            builder += "Record Mark: Length of "+str(i['kerberos.rm.length'])+", Reserved? "+str(i['kerberos.rm.reserved'])+"\n"
+        for i in self.elements:
+            builder += str(i) + "\n"
+        return builder
+    def doMoarInit(self):
+        for i in self.data:
+            if i in self.keyvals:
+                continue
+            match i:
+                case _:
+                    if "Record Mark" in i:
+                        self.marks.append(self.data[i])
+                    else:
+                        raise Exception("Unknown kerberos frame key "+ i)
+    def doTree(self, tree, treename):
+        raise Exception("Unimplemented")
