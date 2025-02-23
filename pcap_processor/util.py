@@ -68,11 +68,13 @@ class DataFrame(PacketDiss):
         super().__init__(data)
         self.framenum = int(frame)
         self.keyvals = self.keyvals.copy()
-        if set(data.keys()) > set(self.keyvals.keys()):
+        s1 = set(self.keyvals.keys())
+        s2 = set(data.keys())
+        if not set(data.keys()) <= set(self.keyvals.keys()):
             try: raise Exception("Unimplemented key values")
             finally:
-                for i in self.data:
-                    if i not in self.keyvals:
+                for i in list(self.data.keys()):
+                    if i not in list(self.keyvals.keys()):
                         print("Value not in mapping", i, "in class", type(self)) 
         for i in self.keyvals:
             if i in data:
@@ -90,7 +92,7 @@ class DataFrame(PacketDiss):
                             self.__dict__[self.keyvals[i][0]] = [self.__dict__[self.keyvals[i][0]]]
                         self.__dict__[self.keyvals[i][0]].append(unpackByteSequence(data[i]))
                     self.__dict__[self.keyvals[i][0]] = unpackByteSequence(data[i])
-                elif "str" == self.keyvals[i][1] or "datetime" == self.keyvals[i][1]:
+                elif self.keyvals[i][1] in ["str","datetime","MAC","IPV4"]:
                     self.assignValue(self.keyvals[i][0], self.getStr(data[i],i),self.keyvals,i)
                 elif "bool" == self.keyvals[i][1]:
                     self.__dict__[self.keyvals[i][0]] = bool(int(data[i]))
@@ -620,6 +622,8 @@ class ticket(DataSubtype):
     keyvals = DataSubtype.keyvals.copy()
     keyvals.update({"kerberos.realm":("realm","str"), #realm
                     "kerberos.tkt_vno":("tkt_vno","uint32"), #tkt-vno
+                    "kerberos.enc_part_element":("elements","subtype",encData),
+                    "kerberos.sname_element":("elements","subtype",sname),
                     })
     def __init__(self, data):
         super().__init__(data)
@@ -704,6 +708,7 @@ class tgs_req(DataFrame):
                     "kerberos.padata_tree":({
                         "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
                         },"tree"),
+                    "kerberos.req_body_element":("elements","subtype",req_body),
                     })
     def __init__(self, data, frame=-1):
         super().__init__(data, frame)

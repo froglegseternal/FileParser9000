@@ -71,67 +71,27 @@ class Ethernet(util.DataFrame):
                     "eth.fcs.status":("FCSstat","uint8"), #FCS Status
                     "eth.type":("type","uint16"), #Type
                     "eth.fcs":("framecheck","uint32"), #Frame check sequence
+                    "eth.dst_tree":"Specialtree",
+                    "eth.src_tree":"Specialtree",
+                    "eth.trailer_tree":"Specialtree",
+                    "eth.dst":("dst_root", "MAC"), #Destination
+                    "eth.src":("src_root", "MAC"), #Source
                      })
-    trees = util.DataFrame.trees + ["eth.trailer_tree", #???
-                                    ]
     def __init__(self, data, frame):
-        super().__init__(data, frame)
         self.dst = {}
         self.src = {}
         self.private = {}
+        super().__init__(data, frame)
     def doMoarInit(self):
         for i in self.data:
             if i in self.keyvals:
                 continue
             if "eth." == i[0:4]:
                 match i[4:]:
-                    case 'dst':
-                        self.dst['root'] = self.data[i] #Destination (MAC address)
-                    case 'dst_tree':
-                        tmp = self.data[i]
-                        self.make_tree('dst_tree',tmp)
-                    case 'src':
-                        self.src['root'] = self.data[i] #Source (MAC address)
-                    case 'src_tree':
-                        tmp = self.data[i]
-                        self.make_tree('src_tree', tmp)
                     case _:
                         print(f"Unknown private Ethernet key {i[4:]}")
             else:
                 print("Unknown public Ethernet key {i}")
-    def make_tree(self, tree, data):
-        dic = {'src_tree': self.src, 'dst_tree': self.dst}
-        spot = dic[tree]
-        for i in data.keys():
-            if ('eth.src.' in i and tree != 'src_tree') or ('eth.dst.' in i and tree!= 'dst_tree'):
-                warnings.warn("unexpected behavior. code change needed.")
-            match i:
-                case 'eth.addr': #Address
-                    spot['addr'] = data[i]
-                case 'eth.addr.oui': #Address OUI
-                    spot['addr_oui'] = data[i]
-                case 'eth.addr.oui_resolved': #Address OUI (resolved)
-                    spot['addr_oui_resolved'] = data[i]
-                case 'eth.addr_resolved': #Address (resolved)
-                    spot['addr_resolved'] = data[i]
-                case 'eth.ig': #IG bit
-                    spot['ig_base_bit'] = data[i]
-                case 'eth.lg': #LG bit
-                    spot['lg_base_bit'] = data[i]
-                case _:
-                    match i[8:]:
-                        case 'resolved': #Source/Destination (resolved)
-                            spot['resolved'] = data[i]
-                        case 'ig': #IG bit
-                            spot['ig_bit'] = data[i]
-                        case 'lg': #LG bit
-                            spot['lg_bit'] = data[i]
-                        case 'oui': #OUI
-                            spot['oui'] = data[i]
-                        case 'oui_resolved': #OUI (resolved)
-                            spot['oui_resolved'] = data[i]
-                        case _:
-                            print(f'Unknown private Ethernet {tree} key {i}')
     def doTree(self, tree, treename):
         if treename == "_ws.expert":
             self.expertnumber += 1
@@ -144,6 +104,39 @@ class Ethernet(util.DataFrame):
                             self.badpad = True
                         case _:
                             print("Unknown _ws.expert tree key", i)
+        elif treename == "eth.dst_tree" or treename == "eth.src_tree":
+            dic = {'eth.src_tree': self.src, 'eth.dst_tree': self.dst}
+            spot = dic[treename]
+            for i in tree.keys():
+                if ('eth.src.' in i and treename != 'eth.src_tree') or ('eth.dst.' in i and treename!= 'eth.dst_tree'):
+                    warnings.warn("unexpected behavior. code change needed.")
+                match i:
+                    case 'eth.addr': #Address
+                        spot['addr'] = tree[i]
+                    case 'eth.addr.oui': #Address OUI
+                        spot['addr_oui'] = tree[i]
+                    case 'eth.addr.oui_resolved': #Address OUI (resolved)
+                        spot['addr_oui_resolved'] = tree[i]
+                    case 'eth.addr_resolved': #Address (resolved)
+                        spot['addr_resolved'] = tree[i]
+                    case 'eth.ig': #IG bit
+                        spot['ig_base_bit'] = tree[i]
+                    case 'eth.lg': #LG bit
+                        spot['lg_base_bit'] = tree[i]
+                    case _:
+                        match i[8:]:
+                            case 'resolved': #Source/Destination (resolved)
+                                spot['resolved'] = tree[i]
+                            case 'ig': #IG bit
+                                spot['ig_bit'] = tree[i]
+                            case 'lg': #LG bit
+                                spot['lg_bit'] = tree[i]
+                            case 'oui': #OUI
+                                spot['oui'] = tree[i]
+                            case 'oui_resolved': #OUI (resolved)
+                                spot['oui_resolved'] = tree[i]
+                            case _:
+                                print(f'Unknown private Ethernet {tree} key {i}')
         elif treename == "eth.trailer_tree":
             for i in tree:
                 match i:
@@ -155,7 +148,7 @@ class Ethernet(util.DataFrame):
             raise Exception("Unimplemented")
     def __str__(self):
         builder = "-"*45 + "Ethernet"+"-"*45+"\n"
-        builder += "Destination MAC Address: "+str(self.dst['root'])
+        builder += "Destination MAC Address: "+str(self.dst_root)
         builder += " | Source MAC Address: "+str(self.src['root'])
         builder += "\nEtherType/Length: "+self.getEtherType()+"\n"
         if "framecheck" in self.__dict__:
@@ -379,13 +372,14 @@ class IpV4(util.DataFrame):
                     "ip.ttl":("ttl","uint8"), #Time to Live (uint8)
                     "ip.dsfield_tree":"Specialtree",
                     "ip.flags_tree":"Specialtree",
-                    "ip.ttl_tree":"Specialtree"
+                    "ip.ttl_tree":"Specialtree",
+                    "ip.dst_host":("dst_host","str"), #Destination Host
+                    "ip.host":("host", "str"), #Source or Destination Host
+                    "ip.src_host":("src_host","str"), #Source Host
+                    "ip.addr":("addr","IPV4"), #Source or Destination address
+                    "ip.dst":("dst","IPV4"), #Destination Address
+                    "ip.src":("src","IPV4"), #Source Address
                     })
-    strs = util.DataFrame.__dict__['strs'].copy()
-    strs.update({"ip.dst_host":"dst_host", #Destination Host
-                 "ip.host":"host", #Source or Destination Host
-                "ip.src_host":"src_host" #Source Host
-                 })
     framerefs = util.DataFrame.__dict__['framerefs'].copy()
     def __init__(self, data, frame):
         self.options = []
@@ -398,18 +392,14 @@ class IpV4(util.DataFrame):
                 continue
             if i not in self.trees and i not in self.ints and i not in self.strs:
                 match i[3:]: #ip.X
-                    case "addr": #Source or Destination address (IPv4 address)
-                        self.addr = data[i]
-                    case "dst": #Destination Address (IPv4 address)
-                        self.dst = data[i]
-                    case 'src': #Source Address (IPv4 address)
-                        self.src = data[i]
                     case _:
                         if "Options" in i:
                             self.doTree(data[i],i,"Options")
                         else:
                             raise Exception(f"Unknown IpData ({self.typ}) key {i} with value {data[i]}")
     def doTree(self, tree, treename,treetype=None):
+        if "Options" in treename and treetype == None:
+            treetype = "Options"
         if treename == 'ip.dsfield_tree':
             for i in tree:
                 match i[11:]: #ip.dsfield.X
@@ -574,12 +564,10 @@ class IpV6(IpV4): #Internet Protocol Version 6
                     "ipv6.plen":("plen","uint16"), #Payload Length (uint16)
                     "ipv6.hopopts":"Specialtree", #Hop-by-Hop Options
                     "ipv6.tclass_tree":"Specialtree",
+                    "ipv6.dst_host":("dst_host","str"), #Destination Host
+                    "ipv6.host":("host","str"), #Source or Destination Host
+                    "ipv6.src_host":("src_host","str"), #Source Host
         })
-    strs = IpV4.__dict__["strs"].copy()
-    strs.update({"ipv6.dst_host":"dst_host", #Destination Host
-                "ipv6.host":"host", #Source or Destination Host
-                "ipv6.src_host":"src_host" #Source Host
-                 })
     ipv6_addrs = util.DataFrame.__dict__['ipv6_addrs'].copy()
     ipv6_addrs.update({"ipv6.addr": "addr", #Source or Destination Address (IPv6 Address)
                        "ipv6.dst":"dst", #Destination Address
