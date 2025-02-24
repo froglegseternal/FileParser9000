@@ -64,9 +64,7 @@ if args.activedirectory:
     import activedirectory as ad
     import resolution
 
-class Ethernet(util.DataFrame):
-    keyvals = util.DataFrame.keyvals.copy()
-    keyvals.update({"eth.padding":("padding","byteseq"), #Padding
+tmp = {"eth.padding":("padding","byteseq"), #Padding
                     "eth.trailer":("trail","byteseq"), #Trailer
                     "eth.fcs.status":("FCSstat","uint8"), #FCS Status
                     "eth.type":("type","uint16"), #Type
@@ -76,7 +74,8 @@ class Ethernet(util.DataFrame):
                     "eth.trailer_tree":"Specialtree",
                     "eth.dst":("dst_root", "MAC"), #Destination
                     "eth.src":("src_root", "MAC"), #Source
-                     })
+    }
+class Ethernet(util.DataFrame, keyvals=tmp):
     def __init__(self, data, frame):
         self.dst = {}
         self.src = {}
@@ -149,7 +148,7 @@ class Ethernet(util.DataFrame):
     def __str__(self):
         builder = "-"*45 + "Ethernet"+"-"*45+"\n"
         builder += "Destination MAC Address: "+str(self.dst_root)
-        builder += " | Source MAC Address: "+str(self.src['root'])
+        builder += " | Source MAC Address: "+str(self.src_root)
         builder += "\nEtherType/Length: "+self.getEtherType()+"\n"
         if "framecheck" in self.__dict__:
             builder += "Frame check sequence: "+str(self.framecheck)
@@ -356,10 +355,7 @@ class IMF(util.DataFrame): #Internet Message Format
         builder+= "Subject: "+self.subj+"\n"
         return builder
 
-class IpV4(util.DataFrame):
-    typ = "IpV4"
-    keyvals = util.DataFrame.keyvals.copy()
-    keyvals.update({"ip.checksum":("check","uint16"), #Header Checksum (uint16)
+tmp = {"ip.checksum":("check","uint16"), #Header Checksum (uint16)
                     "ip.checksum.status":("checkstat","uint8"), #Header checksum status (uint8)
                     "ip.dsfield":("dsfield","uint8"), #Differentiated Services Field (uint8)
                     "ip.flags":("root_flags","uint8"), #Flags (uint8)
@@ -379,7 +375,9 @@ class IpV4(util.DataFrame):
                     "ip.addr":("addr","IPV4"), #Source or Destination address
                     "ip.dst":("dst","IPV4"), #Destination Address
                     "ip.src":("src","IPV4"), #Source Address
-                    })
+                    }
+class IpV4(util.DataFrame, keyvals=tmp):
+    typ = "IpV4"
     framerefs = util.DataFrame.__dict__['framerefs'].copy()
     def __init__(self, data, frame):
         self.options = []
@@ -1015,47 +1013,45 @@ class PacketUnit():
         global args
         self.frame = Frame(self.layers['frame'])
         if args.frame: self.frame.doMoarInit()
-        for i in self.layers.keys():
-            if args.frame: print(i)
-            if i == 'frame':
-                pass
-            elif i in layers and layers[i] != None and not isinstance(self.layers[i], list):
-                self.__dict__[i] = layers[i](self.layers[i],self.frame.number)
-            elif i in layers and layers[i] != None:
-                self.__dict__[i] = [layers[i](j,self.frame.number) for j in self.layers[i]]
-            elif i in layers:
-                pass
-            else:
-                print(f"Unknown layer: {i}")
-            if i == 'arp' and args.arp:
-                self.arp.doMoarInit()
-                print(self.arp)
-            elif i == 'dhcp' and args.dhcp:
-                self.dhcp.doMoarInit()
-                print(self.dhcp)
-            elif i == 'dns' and args.dns:
-                self.dns.doMoarInit()
-                print(self.dns)
-            
-            elif i == 'eth' and args.ethernet:
-                self.eth.doMoarInit()
-                print(self.eth)
-            elif i == 'gquic' and args.quic:
+        if set(self.layers) - set(layers) != {'frame'}:
+            raise Exception(f"Unimplemented layer type(s): {set(self.layers)-set(layers)}")
+        if args.frame:
+            print(set(self.layers))
+        for i in {x for x in self.layers if x in layers and layers[x] != None and not isinstance(self.layers[x], list)}:
+            self.__dict__[i] = layers[i](self.layers[i], self.frame.number)
+        for i in {x for x in self.layers if x in layers and layers[x] != None and isinstance(self.layers[x], list)}:
+            self.__dict__[i] = [layers[i](j,self.frame.number) for j in self.layers[i]]
+        if args.arp and 'arp' in self.__dict__:
+            self.arp.doMoarInit()
+            print(self.arp)
+        if args.dhcp and 'dhcp' in self.__dict__:
+            self.dhcp.doMoarInit()
+            print(self.dhcp)
+        if args.dns and 'dns' in self.__dict__:
+            self.dns.doMoarInit()
+            print(self.dns)
+        if args.ethernet and 'eth' in self.__dict__:
+            self.eth.doMoarInit()
+            print(self.eth)
+        if args.quic:
+            if 'gquic' in self.__dict__:
                 self.gquic.doMoarInit()
                 print(self.gquic)
-            elif i == 'quic' and args.quic:
+            if 'quic' in self.__dict__:
                 self.quic.doMoarInit()
                 print(self.quic)
-            elif i == 'http' and args.http:
-                self.http.doMoarInit()
-                print(self.http)
-            elif i == 'icmp' and args.icmp:
+        if args.http and 'http' in self.__dict__:
+            self.http.doMoarInit()
+            print(self.http)
+        if args.icmp:
+            if 'icmp' in self.__dict__:
                 self.icmp.doMoarInit()
                 print(self.icmp)
-            elif i == 'icmpv6' and args.icmp:
+            if 'icmpv6' in self.__dict__:
                 self.icmpv6.doMoarInit()
                 print(self.icmpv6)
-            elif i == 'igmp' and args.igmp:
+        for i in self.layers.keys():
+            if i == 'igmp' and args.igmp:
                 self.igmp.doMoarInit()
                 print(self.igmp)
             elif i == 'imf' and args.imf:
