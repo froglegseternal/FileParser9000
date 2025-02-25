@@ -1,6 +1,10 @@
 import util
 
-class DHCP(util.DataFrame): #https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol
+class DHCP(util.DataFrame): 
+    '''
+    For more information see:
+        https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol
+    '''
     ints = util.DataFrame.__dict__['ints'].copy()
     ints.update({"dhcp.flags":"flags_bootp", #Bootp flags
                     "dhcp.hw.type":"hwtype", #Hardware type
@@ -189,7 +193,11 @@ class DHCP(util.DataFrame): #https://en.wikipedia.org/wiki/Dynamic_Host_Configur
         else:
             print("Unknown DHCP tree", treename)
 
-class DNS(util.DataFrame): #https://en.wikipedia.org/wiki/Domain_Name_System
+class DNS(util.DataFrame): 
+    '''
+    For more information see:
+        https://en.wikipedia.org/wiki/Domain_Name_System
+    '''
     typ = "DNS"
     trees = util.DataFrame.__dict__['trees'] + ['dns.id_tree']
     ints = util.DataFrame.__dict__['hexints'].copy()
@@ -431,7 +439,10 @@ class DNS(util.DataFrame): #https://en.wikipedia.org/wiki/Domain_Name_System
 
         else: print("Unknown DNS tree", treename)
 
-class LLMNR(DNS): #Link-Local Multicast Name Resolution
+class LLMNR(DNS): 
+    '''
+    Link-Local Multicast Name Resolution
+    '''
     typ = "LLMNR"
     def doMoarInit(self):
         super().doMoarInit({x: self.data[x] for x in self.data if 'llmnr' not in x})
@@ -442,26 +453,21 @@ class LLMNR(DNS): #Link-Local Multicast Name Resolution
 
 class MDNS(DNS):
     typ = "mDNS"
-    def doMoarInit(self):
-        super().doMoarInit()
 
-class NBNS(DNS): #NetBIOS Name Service
+
+tmp = {"nbns.flags":("base_flags","uint16"), #Flags (uint16)
+        "nbns.flags_tree":"Specialtree",
+        "nbns.id":("id","uint16"), #Transaction ID (uint16)
+        'nbns.count.add_rr':("add_rr_count",'uint16'), #Additional RRs (uint16)
+        'nbns.count.answers':('answers_count','uint16'), #Answer RRs (uint16)
+        'nbns.count.auth_rr':('auth_rr_count','uint16'), #Authority RRs (uint16)
+        'nbns.count.queries':('queries_count','uint16'),#Questions (uint16)
+                 }
+class NBNS(DNS,keyvals=tmp): 
+    '''
+    NetBIOS Name Service
+
+    For more informations see:
+        https://www.rfc-editor.org/rfc/rfc1001.html
+    '''
     typ = "NBNS"
-    ints = DNS.ints.copy()
-    ints.update({"nbns.flags":"base_flags", #Flags (uint16)
-                "nbns.id":"id", #Transaction ID (uint16)
-                'nbns.count.add_rr':"add_rr_count", #Additional RRs (uint16)
-                 'nbns.count.answers':'answers_count', #Answer RRs (uint16)
-                 'nbns.count.auth_rr':'auth_rr_count',#Authority RRs (uint16)
-                 'nbns.count.queries':'queries_count',#Questions (uint16)
-                 })
-    trees = DNS.trees + ["nbns.flags_tree"]
-    def doMoarInit(self):
-        super().doMoarInit()
-        for i in self.data:
-            if i in self.ints or i in self.trees or i == "Queries":
-                continue
-            match i:
-                case _:
-                    print("Unknown NBNS key", i)
-

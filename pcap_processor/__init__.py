@@ -1,3 +1,9 @@
+'''
+Note that when a keyval variable is commented with "//", the phrase on the left is from the wireshark
+docs and the phrase on the right is from either the official documents, wikipedia, or whatever else may
+be cited in the docstring of that class.
+'''
+
 class aarg():
     def __init__(self, dic):
         self.verbose = False

@@ -356,26 +356,26 @@ class IMF(util.DataFrame): #Internet Message Format
         return builder
 
 tmp = {"ip.checksum":("check","uint16"), #Header Checksum (uint16)
-                    "ip.checksum.status":("checkstat","uint8"), #Header checksum status (uint8)
-                    "ip.dsfield":("dsfield","uint8"), #Differentiated Services Field (uint8)
-                    "ip.flags":("root_flags","uint8"), #Flags (uint8)
-                    "ip.frag_offset":("frag_off","uint16"), #Fragment Offset (uint16)
-                    "ip.id":("id","uint16"), #Identification (uint16)
-                    "ip.version":("ver","uint8"), #Version (uint8)
-                    "ip.hdr_len":("hdr_len","uint8"), #Header Length (uint8)
-                    "ip.len":("len","uint16"), #Total Length (uint16)
-                    "ip.proto":("proto","uint8"), #Protocol (uint8)
-                    "ip.ttl":("ttl","uint8"), #Time to Live (uint8)
-                    "ip.dsfield_tree":"Specialtree",
-                    "ip.flags_tree":"Specialtree",
-                    "ip.ttl_tree":"Specialtree",
-                    "ip.dst_host":("dst_host","str"), #Destination Host
-                    "ip.host":("host", "str"), #Source or Destination Host
-                    "ip.src_host":("src_host","str"), #Source Host
-                    "ip.addr":("addr","IPV4"), #Source or Destination address
-                    "ip.dst":("dst","IPV4"), #Destination Address
-                    "ip.src":("src","IPV4"), #Source Address
-                    }
+        "ip.checksum.status":("checkstat","uint8"), #Header checksum status (uint8)
+        "ip.dsfield":("dsfield","uint8"), #Differentiated Services Field (uint8)
+        "ip.flags":("root_flags","uint8"), #Flags (uint8)
+        "ip.frag_offset":("frag_off","uint16"), #Fragment Offset (uint16)
+        "ip.id":("id","uint16"), #Identification (uint16)
+        "ip.version":("ver","uint8"), #Version (uint8)
+        "ip.hdr_len":("hdr_len","uint8"), #Header Length (uint8)
+        "ip.len":("len","uint16"), #Total Length (uint16)
+        "ip.proto":("proto","uint8"), #Protocol (uint8)
+        "ip.ttl":("ttl","uint8"), #Time to Live (uint8)
+        "ip.dsfield_tree":"Specialtree",
+        "ip.flags_tree":"Specialtree",
+        "ip.ttl_tree":"Specialtree",
+        "ip.dst_host":("dst_host","str"), #Destination Host
+        "ip.host":("host", "str"), #Source or Destination Host
+        "ip.src_host":("src_host","str"), #Source Host
+        "ip.addr":("addr","IPV4"), #Source or Destination address
+        "ip.dst":("dst","IPV4"), #Destination Address
+        "ip.src":("src","IPV4"), #Source Address
+        }
 class IpV4(util.DataFrame, keyvals=tmp):
     typ = "IpV4"
     framerefs = util.DataFrame.__dict__['framerefs'].copy()
@@ -385,16 +385,16 @@ class IpV4(util.DataFrame, keyvals=tmp):
     def doMoarInit(self, data=None):
         if self.typ == "IpV4":
             data = self.data
-        for i in data:
-            if i in self.keyvals:
-                continue
-            if i not in self.trees and i not in self.ints and i not in self.strs:
-                match i[3:]: #ip.X
-                    case _:
-                        if "Options" in i:
-                            self.doTree(data[i],i,"Options")
-                        else:
-                            raise Exception(f"Unknown IpData ({self.typ}) key {i} with value {data[i]}")
+  #      for i in data:
+  #          if i in self.keyvals:
+  #              continue
+  #          if i not in self.trees and i not in self.ints and i not in self.strs:
+  #              match i[3:]: #ip.X
+  #                  case _:
+  #                      if "Options" in i:
+  #                          self.doTree(data[i],i,"Options")
+  #                      else:
+  #                          raise Exception(f"Unknown IpData ({self.typ}) key {i} with value {data[i]}")
     def doTree(self, tree, treename,treetype=None):
         if "Options" in treename and treetype == None:
             treetype = "Options"
@@ -460,7 +460,6 @@ class IpV4(util.DataFrame, keyvals=tmp):
         builder += "Identification: "+str(self.id)+" | Flags: "+self.getFlags()+" | Fragment Offset: "+str(self.frag_off)+"\n"
         builder += "Time to Live: "+str(self.ttl) + "\nProtocol: "+self.getProto(self.proto)+ "\nHeader Checksum: "+str(self.check) + " (Status: "+str(self.checkstat)+")"+"\n"
         builder += "Source Address: "+self.src+" | Destination Address: "+self.dst+"\n"
-        builder += "\n"
         builder += "Source Host: "+self.src_host+" | Destination Host: "+self.dst_host+"\n\n"
         for i in self.options:
             builder += str(i)+"\n"
@@ -561,9 +560,9 @@ class IpV6(IpV4): #Internet Protocol Version 6
                     "ipv6.nxt":("nxt","uint8"), #Next Header (uint8)
                     "ipv6.plen":("plen","uint16"), #Payload Length (uint16)
                     "ipv6.hopopts":"Specialtree", #Hop-by-Hop Options
-                    "ipv6.tclass_tree":"Specialtree",
+                    "ipv6.tclass_tree":"Specialtree",   #???
                     "ipv6.dst_host":("dst_host","str"), #Destination Host
-                    "ipv6.host":("host","str"), #Source or Destination Host
+                    "ipv6.host":("host","str"),         #Source or Destination Host
                     "ipv6.src_host":("src_host","str"), #Source Host
         })
     ipv6_addrs = util.DataFrame.__dict__['ipv6_addrs'].copy()
@@ -615,7 +614,6 @@ class IpV6(IpV4): #Internet Protocol Version 6
         builder += "Version: "+str(self.ver) + " | Traffic Class - DSCP: "+self.getDSCPClass()+ ", ECN: "+self.getECN() + " | Flow Label: " + str(self.flow) + "\n"
         builder += "Payload Length: "+str(self.plen)+"\nNext Header (Protocol): "+self.getProto()+"\nHop Limit: "+str(self.hlim)+"\n"
         builder += "Source Address: "+self.src+" | Destination Address: "+self.dst+"\n"
-        builder += "\n"
         builder += "Source Host: "+self.src_host+" | Destination Host: "+self.dst_host+"\n\n"
         return builder
 
@@ -1021,25 +1019,41 @@ class PacketUnit():
             self.__dict__[i] = layers[i](self.layers[i], self.frame.number)
         for i in {x for x in self.layers if x in layers and layers[x] != None and isinstance(self.layers[x], list)}:
             self.__dict__[i] = [layers[i](j,self.frame.number) for j in self.layers[i]]
+        if args.activedirectory:
+            if 'dcerpc' in self.__dict__:
+                self.dcerpc.doMoarInit()
+                print(self.dcerpc)
+            if 'nbns' in self.__dict__:
+                self.nbns.doMoarInit()
+                print(self.nbns)
+            if 'nbss' in self.__dict__:
+                self.nbss.doMoarInit()
+                print(self.nbss)
+            if 'ntp' in self.__dict__:
+                self.ntp.doMoarInit()
+                print(self.ntp)
+            if 'smb' in self.__dict__:
+                self.smb.doMoarInit(self.nbss)
+                print(self.smb)
+            if 'smb2' in self.__dict__:
+                self.smb2.doMoarInit()
+                print(self.smb2)
         if args.arp and 'arp' in self.__dict__:
             self.arp.doMoarInit()
             print(self.arp)
         if args.dhcp and 'dhcp' in self.__dict__:
             self.dhcp.doMoarInit()
             print(self.dhcp)
-        if args.dns and 'dns' in self.__dict__:
-            self.dns.doMoarInit()
-            print(self.dns)
+        if args.dns:
+            if 'dns' in self.__dict__:
+                self.dns.doMoarInit()
+                print(self.dns)
+            if 'nbns' in self.__dict__ and not args.activedirectory:
+                self.nbns.doMoarInit()
+                print(self.nbns)
         if args.ethernet and 'eth' in self.__dict__:
             self.eth.doMoarInit()
             print(self.eth)
-        if args.quic:
-            if 'gquic' in self.__dict__:
-                self.gquic.doMoarInit()
-                print(self.gquic)
-            if 'quic' in self.__dict__:
-                self.quic.doMoarInit()
-                print(self.quic)
         if args.http and 'http' in self.__dict__:
             self.http.doMoarInit()
             print(self.http)
@@ -1050,53 +1064,46 @@ class PacketUnit():
             if 'icmpv6' in self.__dict__:
                 self.icmpv6.doMoarInit()
                 print(self.icmpv6)
-        for i in self.layers.keys():
-            if i == 'igmp' and args.igmp:
+        if args.igmp:
+            if 'igmp' in self.__dict__:
                 self.igmp.doMoarInit()
                 print(self.igmp)
-            elif i == 'imf' and args.imf:
+        if args.imf:
+            if 'imf' in self.__dict__:
                 self.imf.doMoarInit()
                 print(self.imf)
-            elif i == 'ip' and (args.ipdata or args.udp):
+        if args.ipdata:
+            if "ip" in self.__dict__:
                 self.ip.doMoarInit()
                 print(self.ip)
-            elif i == 'ipv6' and (args.ipdata or args.udp):
+            if "ipv6" in self.__dict__:
                 self.ipv6.doMoarInit()
-            elif i == 'kerberos' and args.kerb:
+                print(self.ipv6)
+        if args.kerb:
+            if 'kerberos' in self.__dict__:
                 self.kerberos.doMoarInit()
                 print(self.kerberos)
-            elif i == 'lldp' and args.lldp:
+        if args.lldp:
+            if 'lldp' in self.__dict__:
                 self.lldp.doMoarInit()
                 print(self.lldp)
-            elif i == 'llmnr' and args.llmnr:
+        if args.llmnr:
+            if 'llmnr' in self.__dict__:
                 self.llmnr.doMoarInit()
                 print(self.llmnr)
-            elif i == 'mdns' and args.mdns:
+        if args.mdns:
+            if 'mdns' in self.__dict__:
                 self.mdns.doMoarInit()
                 print(self.mdns)
-            elif args.activedirectory:
-                if i == 'dcerpc':
-                    self.dcerpc.doMoarInit()
-                    print(self.dcerpc)
-                elif i == 'nbns' and not args.dns:
-                    self.nbns.doMoarInit()
-                    print(self.nbns)
-                elif i == 'nbss':
-                    self.nbss.doMoarInit()
-                    print(self.nbss)
-                elif i == 'ntp':
-                    self.ntp.doMoarInit()
-                    print(self.ntp)
-                elif i == 'smb':
-                    self.smb.doMoarInit()
-                    print(self.smb)
-                elif i == 'smb2':
-                    self.smb2.doMoarInit()
-                    print(self.smb2)
-            elif i == 'nbns' and args.dns:
-                self.nbns.doMoarInit()
-                print(self.nbns)
-            elif i == 'ssdp' and args.ssdp:
+        if args.quic:
+            if 'gquic' in self.__dict__:
+                self.gquic.doMoarInit()
+                print(self.gquic)
+            if 'quic' in self.__dict__:
+                self.quic.doMoarInit()
+                print(self.quic)
+        for i in self.layers.keys():
+            if i == 'ssdp' and args.ssdp:
                 self.ssdp.doMoarInit()
                 print(self.ssdp)
             elif (i=='tcp' or i == 'tcp.segments') and args.tcp:

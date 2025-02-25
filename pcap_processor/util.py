@@ -78,6 +78,8 @@ class DataFrame(PacketDiss):
     ipv6_addrs = {}
     strs = {}
     keyvals = {"ber.bitstring.padding":("ber_bitstring_padding","uint8"), #Padding
+               "_ws.expert":"Specialtree",
+               "Timestamps":"Specialtree",
             }
     def __init_subclass__(cls, keyvals={}, **kwargs):
         cls.keyvals = cls.__bases__[0].keyvals.copy()
@@ -108,7 +110,7 @@ class DataFrame(PacketDiss):
                 raise Exception(f"Unimplemented key values in class {type(self)}")
         for i in self.keyvals:
             if i in data:
-                if "uint" in self.keyvals[i][1]:
+                if "uint" in self.keyvals[i][1] or "framenum" == self.keyvals[i][1]:
                     self.assignValue(self.keyvals[i][0], self.getInt(data[i],i,self.keyvals),self.keyvals, i)
                 elif "int" in self.keyvals[i][1]:
                     self.assignValue(self.keyvals[i][0], self.getInt(data[i], i, self.keyvals,signed=True),self.keyvals, i)
@@ -122,7 +124,7 @@ class DataFrame(PacketDiss):
                             self.__dict__[self.keyvals[i][0]] = [self.__dict__[self.keyvals[i][0]]]
                         self.__dict__[self.keyvals[i][0]].append(unpackByteSequence(data[i]))
                     self.__dict__[self.keyvals[i][0]] = unpackByteSequence(data[i])
-                elif self.keyvals[i][1] in ["str","datetime","MAC","IPV4"]:
+                elif self.keyvals[i][1] in ["str","datetime","timeoffset","MAC","IPV4","gui","ASN1"]:
                     self.assignValue(self.keyvals[i][0], self.getStr(data[i],i),self.keyvals,i)
                 elif "bool" == self.keyvals[i][1]:
                     self.__dict__[self.keyvals[i][0]] = bool(int(data[i]))
@@ -161,6 +163,12 @@ class DataFrame(PacketDiss):
         raise Exception(f"This should never be called. A tree of name {treename} made its way to the base DataFrame class. The type of this object is "+self.typ)
 
     def doTreeBetter(self, tree, keytree, treename):
+        if isinstance(tree, list):
+            for i in tree:
+                tmpcopy = i.copy()
+                tmpcopy.update(dict.fromkeys(j for j in keytree if j not in tree))
+                self.doTreeBetter(tmpcopy, keytree, treename)
+                return
         for i in tree:
             if i not in keytree:
                 print("Unknown key in tree", treename, "with key", i)
@@ -172,7 +180,7 @@ class DataFrame(PacketDiss):
                 self.doTreeBetter(tree[i], keytree[i][0], i)
             elif "byteseq" == keytree[i][1]:
                 self.__dict__[keytree[i][0]] = unpackByteSequence(tree[i])
-            elif "str" == keytree[i][1]:
+            elif keytree[i][1] in ['str','gui','ASN1']: #'gui'='Globally Unique Identifier'
                 self.assignValue(keytree[i][0], self.getStr(tree[i],i),keytree,i)
             elif "bool" == keytree[i][1]:
                 self.__dict__[keytree[i][0]] = bool(int(tree[i]))
@@ -193,6 +201,8 @@ class DataFrame(PacketDiss):
                 raise Exception("Unimplemented")
 
     def getInt(self, integer, parent=None, keytree=None, signed=False):
+        if integer is None:
+            return None
         if (isinstance(integer, int) or isinstance(integer, str)) and signed:
             if "0x" in integer:
                 return int.from_bytes(bytes.fromhex(integer[2:]), signed=True)
@@ -227,6 +237,8 @@ class DataFrame(PacketDiss):
             print(type(integer))
             raise Exception("Invalid type exception")
     def getStr(self, string, parent=None):
+        if string is None:
+            return string
         if isinstance(string, str):
             return string
         elif isinstance(string, dict):
@@ -251,13 +263,6 @@ class DataFrame(PacketDiss):
         builder = super().__str__()
         return builder
 
-    @classmethod
-    def initialKeyvalCreation(cls, dicky):
-        cls.keyvals = cls.__bases__[0].keyvals.copy()
-        cls.keyvals.update(dicky)
-        if len(cls.keyvals) > 1:
-            for i in cls.__bases__[1:]:
-                cls.keyvals.update(i.keyvals)
 
 class DataSubtype(DataFrame):
     def __init__(self, data, frame=-1):
@@ -368,7 +373,6 @@ class DNSAuth(DNSAnswer):
 class Data(DataFrame):
     def __init__(self, data, frame=-1):
         super().__init__(data, frame)
-        #if self.framenum != -1: print(f"Frame number: {self.framenum}")
         for i in self.data:
             match i:
                 case 'data.data': #Data
@@ -378,23 +382,6 @@ class Data(DataFrame):
                 case _:
                     pass
                     #print("Unknown data key ",i)
-
-class gss_api(): #GSS-API Generic Security Service Application Program Interface
-    def __init__(self, data):
-        self.data = data
-        for i in data:
-            if i[0:12] == 'spnego.krb5.': #spnego.krb5.X
-                if 'krb5' not in self.__dict__:
-                    self.krb5 = krb5()
-                self.krb5[i] = data[i]
-            else:
-                match i:
-                    case 'gss-api.OID': #OID
-                        self.oid = data[i]
-                    case _:
-                        print("Unknown GSS_API key: ",i)
-    def doTree(self, tree, treename):
-        print("Unknown behavior for gss_api")
 
 class Malformed(DataFrame):
     def doMoarInit(self):
@@ -523,8 +510,44 @@ class MIME(DataSubtype):
                     self.media = temp
                 case _:
                     print(f"Unknown media key {i}")
+############################################
+tmp = {'spnego.hintName':("hintName","str") #hintName
+       }
+class spnego_negHints(DataSubtype,keyvals=tmp):
+    pass
+#############################################
+tmp = {"spnego.mechTypes":("mechTypes","uint32"), #mechTypes
+       'spnego.negHints_element':("elements","subtype",spnego_negHints), #negHints
+        'spnego.mechTypes_tree':({
+            "spnego.MechType":("mechType","ASN1") #MechType
+            },"tree"),
+       }
+class spnego_negTokenInit(DataSubtype,keyvals=tmp):
+    pass
+##############################################
+tmp = {"spnego.negTokenInit_element":("elements","subtype",spnego_negTokenInit),
+              }
+class spnego(DataSubtype, keyvals=tmp):
+    pass
+#############################################
+tmp = {"gss-api.OID":("OID","str"), #OID
+       "spnego":("spnego","subtype",spnego),
+       }
+class gss_api(DataSubtype,keyvals=tmp): 
+    '''
+    GSS-API Generic Security Service Application Program Interface
+    '''
+    def __init__(self, data):
+        super().__init__(data)
+        for i in data:
+            if i[0:12] == 'spnego.krb5.': #spnego.krb5.X
+                if 'krb5' not in self.__dict__:
+                    self.krb5 = krb5()
+                self.krb5[i] = data[i]
+    def doTree(self, tree, treename):
+        print("Unknown behavior for gss_api")
 
-
+################################################
 class krb5():
     def __init__(self):
         self.blobs = []
@@ -616,43 +639,43 @@ class krbblob():
             self[i] = tree[i]
 
 tmp = {"kerberos.name_type":("name_type","int32"), #name-type
-                    "kerberos.sname_string":("string","uint32"), #sname-string
-                    "kerberos.sname_string_tree":({
-                        "kerberos.SNameString":("name","str"), #SNameString
-                        }, "tree"), #???
-                    }
+        "kerberos.sname_string":("string","uint32"), #sname-string
+        "kerberos.sname_string_tree":({
+            "kerberos.SNameString":("name","str"), #SNameString
+            }, "tree"), #???
+        }
 class sname(DataSubtype, keyvals=tmp):
     pass
 elements = {"kerberos.sname_element":("elements","subtype",sname)} 
 
 
+################################################
+
 tmp = {"kerberos.cipher":("cipher","byteseq"), #cipher
-                    "kerberos.etype":("etype","int32"), #etype
-                    "kerberos.kvno":("kvno","uint32"), #kvno
-                    "kerberos.realm":("realm","str"), #realm
-                    "kerberos.crealm":("crealm","str"), #crealm
-                    "kerberos.pvno":("pvno","uint32"), #pvno
-                    "kerberos.msg_type":("msg_type","int32"), #msg-type
-                    "kerberos.nonce":("nonce","uint32"), #nonce
-                    "kerberos.rtime":("rtime","datetime"), #rtime
-                    "kerberos.till":("till","datetime"), #till
-                    }
+        "kerberos.etype":("etype","int32"), #etype
+        "kerberos.kvno":("kvno","uint32"), #kvno
+        "kerberos.realm":("realm","str"), #realm
+        "kerberos.crealm":("crealm","str"), #crealm
+        "kerberos.pvno":("pvno","uint32"), #pvno
+        "kerberos.msg_type":("msg_type","int32"), #msg-type
+        "kerberos.nonce":("nonce","uint32"), #nonce
+        "kerberos.rtime":("rtime","datetime"), #rtime
+        "kerberos.till":("till","datetime"), #till
+        }
 class krb_subtype(DataSubtype, keyvals=tmp):
     pass 
 
 #########################
 
 class authenticator(krb_subtype):
-    def __init__(self, data):
-        super().__init__(data)
-        print(self.data)
+    typ = "authenticator"
 
 elements.update({"kerberos.authenticator_element":("elements","subtype",authenticator)})
 
 ##########################
 
 class encData(krb_subtype):
-    pass
+    typ = "enc_part"
 elements.update({"kerberos.enc_part_element":("elements","subtype",encData)})
 
 
@@ -662,6 +685,7 @@ tmp = {"kerberos.tkt_vno":("tkt_vno","uint32"), #tkt-vno
 tmp.update(elements)
 
 class ticket(krb_subtype, keyvals=tmp):
+    typ = "ticket"
     def __init__(self, data):
         super().__init__(data)
 
@@ -674,13 +698,14 @@ tmp = {"kerberos.ap_options":("ap_opt","byteseq"), #ap-options
        }
 tmp.update(elements)
 class ap_req(krb_subtype, keyvals=tmp):
-    pass
+    typ = "ap_req"
+
 elements.update({"kerberos.ap_req_element":("elements","subtype",ap_req)})
 
 #######################
 
 class ap_rep(krb_subtype):
-    pass
+    typ = "ap_rep"
 
 
 ########################
@@ -698,8 +723,12 @@ tmp = {"kerberos.padata_type":("type","int32"), #padata-type
         }
 tmp.update(elements)
 class padata(krb_subtype, keyvals=tmp):
-    pass
+    typ = "padata"
 
+elements.update({"kerberos.padata":("padata","uint32"), #padata
+                "kerberos.padata_tree":({
+                    "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
+                },"tree")})
 ######################
 
 tmp = {"kerberos.cname_string":("string","uint32"), #cname-string
@@ -711,6 +740,7 @@ tmp = {"kerberos.cname_string":("string","uint32"), #cname-string
 tmp.update(elements)
 
 class cname(krb_subtype, keyvals=tmp):
+    typ = "cname"
     def __init__(self, data):
         super().__init__(data)
 
@@ -719,15 +749,12 @@ elements.update({"kerberos.cname_element":("elements","subtype",cname)})
 ##################
 
 
+class as_rep(krb_subtype, keyvals=elements):
+    typ = "as_rep"
 
-tmp = {"kerberos.padata":("padata","uint32"), #padata
-        "kerberos.padata_tree":({
-            "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
-            },"tree"),
-                    }
-tmp.update(elements)
-class as_rep(krb_subtype, keyvals=tmp):
-    pass
+elements.update({"kerberos.as_rep_element":("elements","subtype",as_rep), #as-rep
+                 })
+############################
 
 tmp = {"kerberos.kdc-req-body.etype":("etype","uint32"), #etype
         "kerberos.kdc-req-body.etype_tree":({
@@ -735,93 +762,94 @@ tmp = {"kerberos.kdc-req-body.etype":("etype","uint32"), #etype
             },"tree"), #???
         "kerberos.kdc_options":("kdc_opt_base","byteseq"), #kdc-options
         "kerberos.kdc_options_tree":({
-            "kerberos.KDCOptions.allow.postdate":("KDC_ALLOW_POSTDATE", "bool"), #allow-postdate
-            "kerberos.KDCOptions.allow_postdate":("KDC_ALLOW_POSTDATE", "bool"), #Allow Postdate
+            "kerberos.KDCOptions.allow.postdate":("KDC_ALLOW_POSTDATE", "bool"),     #allow-postdate
+            "kerberos.KDCOptions.canonicalize":("KDC_CANONICALIZE","bool"),          #canonicalize
+            "kerberos.KDCOptions.constrained.delegation":("KDC_CONST_DELEG","bool"), #constrained-delegation
+            "kerberos.KDCOptions.disable.transited.check":("KDC_DIS_TRANS_CHECK","bool"), #Constrained Delegation
+            "kerberos.KDCOptions.enc.tkt.in.skey":("KDC_ENC_TKT_IN_SKEY","bool"), #enc-tkt-in-skey
+            "kerberos.KDCOptions.forwardable":("KDC_FORWARDABLE","bool"), #forwardable
+            "kerberos.KDCOptions.forwarded":("KDC_FORWARDED","bool"), #forwarded
+            "kerberos.KDCOptions.opt.hardware.auth":("KDC_OPT_HW_AUTH","bool"), #opt-hardware-auth
+            "kerberos.KDCOptions.postdated":("KDC_POSTDATED","bool"), #postdated
+            "kerberos.KDCOptions.proxiable":("KDC_PROXIABLE","bool"), #proxiable
+            "kerberos.KDCOptions.proxy":("KDC_PROXY","bool"), #proxy
+            "kerberos.KDCOptions.renew":("KDC_RENEW","bool"), #renew
+            "kerberos.KDCOptions.renewable":("KDC_RENEWABLE","bool"), #renewale
+            "kerberos.KDCOptions.renewable.ok":("KDC_RENEWABLE_OK","bool"), #renewable-ok
+            "kerberos.KDCOptions.renewable_ok":("KDC_RENEWABLE_OK","bool"), #Renewable OK
+            "kerberos.KDCOptions.request.anonymous":("KDC_ANON", "bool"), #request-anonymous
+            "kerberos.KDCOptions.reserved":("KDC_RESERVED","bool"), #reserved
         },"tree"), #???
-                    "kerberos.kdc_req_body":({},"tree"), #KDC_REQ_BODY
-                    "kerberos.cname_element":("cname","subtype",cname), #cname
-                    "kerberos.sname_element":("elements","subtype",sname), #sname
+        "kerberos.kdc_req_body":({},"tree"), #KDC_REQ_BODY
                     }
+tmp.update(elements)
 class req_body(krb_subtype, keyvals=tmp):
-    def __init__(self, data):
-        super().__init__(data)
-        if "kerberos.kdc_options_tree" in self.data:
-            if "kerberos.KDCOptions.allow.postdate" in self.data["kerberos.kdc_options_tree"] and "kerberos.KDCOptions.allow_postdate" in self.data["kerberos.kdc_options_tree"]:
-                raise Exception("Check your assumptions, one of 'em's wrong.")
+    typ = "req_body"
 
-tmp = {"kerberos.padata":("padata","uint32"), #padata
-        "kerberos.padata_tree":({
-            "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
-                        },"tree"),
-        "kerberos.req_body_element":("elements","subtype",req_body), #req-body
-        }
-class as_req(krb_subtype, keyvals=tmp):
-    pass
+elements.update({"kerberos.req_body_element":("elements","subtype",req_body)}) #req-body
+###############################
+
+class as_req(krb_subtype, keyvals=elements):
+    typ = "as_req"
+elements.update({"kerberos.as_req_element":("elements","subtype",as_req), #as-req
+                })
+####################################
 
 tmp = {"kerberos.e_data":("e_data","byteseq"), #e-data
-                    "kerberos.e_data_tree":({
-                        "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
-                        },"tree"), #???
-                    "kerberos.error_code":("error_code","int32"), #error-code
-                    "kerberos.msg_type":("msg_type","int32"), #msg-type
-                    "kerberos.susec":("susec","int32"), #susec
-                    "kerberos.realm":("realm","str"), #realm
-                    "kerberos.stime":("stime","datetime"), #stime
-                    "kerberos.sname_element":("elements","subtype",sname), #sname
+        "kerberos.e_data_tree":({
+            "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
+            },"tree"), #???
+        "kerberos.error_code":("error_code","int32"), #error-code
+        "kerberos.susec":("susec","int32"), #susec
+        "kerberos.stime":("stime","datetime"), #stime
                     }
+tmp.update(elements)
 class krb_error(krb_subtype, keyvals=tmp):
-    pass
+    typ = "krb_err"
+elements.update({"kerberos.krb_error_element":("elements","subtype",krb_error)})
 
-tmp = {"kerberos.msg_type":("msg_type","int32"), #msg-type
-                   "kerberos.crealm":("crealm","str"), #crealm
-                    "kerberos.cname_element":("cname","subtype",cname), #cname
-                    "kerberos.ticket_element":("ticket","subtype",ticket), #ticket
-                    "kerberos.enc_part_element":("enc_part","subtype",encData), #enc-part
-                    }
-class tgs_rep(krb_subtype, keyvals=tmp):
+###########################
+
+class tgs_rep(krb_subtype, keyvals=elements):
+    typ = "tgs_rep"
     def __str__(self):
-        builder = '-'*20 +"tgs_rep"+"-"*20+"\n"
+        builder = super().__str__()+"\n"
         builder += "PVNO: "+str(self.pvno)+"\n"
         builder += "msg-type: "+str(self.msg_type)+"\n"
-        builder += "crealm: "+str(self.crealm)+"\n"
-        builder += "cname_element: "+str(self.cname)+"\n"
-        builder += "ticket_element: "+str(self.ticket)+"\n"
-        builder += "enc_part_element: "+str(self.enc_part)+"\n"
+        builder += "crealm: "+str(self.crealm)+"\n\n"
+        if isinstance(self.elements, list):
+            for i in self.elements:
+                builder += "Element (belonging to tgs_rep): \n"+str(i)+"\n"
+        else:
+            builder += "Element (belonging to tgs_rep): \n"+str(self.elements)+"\n"
         return builder
 
-tmp = {"kerberos.padata":("padata","uint32"), #padata
-                    "kerberos.msg_type":("msg_type","int32"), #msg-type
-                    "kerberos.padata_tree":({
-                        "kerberos.PA_DATA_element":("padata_s","subtype",padata), #PA-DATA
-                        },"tree"),
-                    "kerberos.req_body_element":("elements","subtype",req_body),
-                    }
-class tgs_req(krb_subtype, keyvals=tmp):
+elements.update({"kerberos.tgs_rep_element":("elements","subtype",tgs_rep)}) #tgs-rep
+####################################
+class tgs_req(krb_subtype, keyvals=elements):
+    typ = "tqs_req"
     def __str__(self):
-        builder = '-'*20 +"tgs_rep"+"-"*20+"\n"
+        builder = super().__str__()+"\n"
         builder += "PVNO: "+str(self.pvno)+"\n"
         builder += "msg-type: "+str(self.msg_type)+"\n"
         builder += "padata: "+str(self.padata)+"\n"
-        builder += "padata_s: "+str(self.padata_s)+"\n"
+        builder += "padata_s: \n"+str(self.padata_s)+"\n\n"
         if isinstance(self.elements, list):
             for i in self.elements:
-                builder += "Element: "+str(i)+"\n"
+                builder += "Element (belonging to tqs_req): \n"+str(i)+"\n"
         else:
-            builder += "Element: "+str(self.elements)+"\n"
+            builder += "Element (belonging to tqs_req): \n"+str(self.elements)+"\n"
         return builder
 
-
-tmp = {"kerberos.as_rep_element":("elements","subtype",as_rep), #as-rep
-                    "kerberos.as_req_element":("elements","subtype",as_req), #as-req
-                    "kerberos.krb_error_element":("elements","subtype",krb_error), #???
-                    "kerberos.req_body_element":("elements","subtype",req_body), #req-body
-                    "kerberos.tgs_rep_element":("elements","subtype",tgs_rep), #tgs-rep
-                    "kerberos.tgs_req_element":("elements","subtype",tgs_req), #tgs-req
+elements.update({"kerberos.tgs_req_element":("elements","subtype",tgs_req)}), #tgs-req
+###########################################
+tmp = {
                     'Record Mark':({
                         "kerberos.rm.length":("reclen","uint32"), #Record Length
                         "kerberos.rm.reserved":("res","bool"), #Reserved
                         }, "tree"), #???
                     }
+tmp.update(elements)
 class krbpacket(DataFrame, keyvals=tmp):
     typ = "kerberos"
     def __init__(self, data, packet):

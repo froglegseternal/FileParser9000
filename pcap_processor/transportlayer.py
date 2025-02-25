@@ -585,60 +585,50 @@ class GQUIC(util.DataFrame):
         builder = "-"*40+"GQUIC"+"-"*40+"\n"
         return builder
 
-class TCP(util.DataFrame): #Transmission Control Protocol
-    keyvals = util.DataFrame.keyvals.copy()
-    keyvals.update({"tcp.ack":("ack","uint32"), #Acknowledgement number
-                 "tcp.ack_raw":("ackraw","uint32"), #Acknowledgement number (raw)
-                    "tcp.checksum":("check","uint16"), #Checksum
-                 "tcp.checksum.status":("checkstat","uint8"), #Checksum status
-                'tcp.completeness':("completeness","uint8"), #Conversation completeness
-                'tcp.dstport':("dstport","uint16"), #Destination port
-                    "tcp.flags": ("flags","uint16"), #Flags
-                'tcp.hdr_len':("hdr_len","uint8"), #Header Length
-                'tcp.len':("len","uint32"), #TCP Segment Len
-                'tcp.nxtseq':("nxtseq","uint32"), #Next Sequence Number
-                'tcp.port':("port","uint16"), #Source or Destination Port
-                'tcp.reassembled.length':("reasslen","uint32"), #Reassembled TCP length
-                'tcp.segment.count':("segcount","uint32"), #Segment count
-                'tcp.seq':("seqnum","uint32"), #Sequence Number
-                'tcp.seq_raw':("seqnumraw","uint32"), #Sequence Number (raw)
-                'tcp.srcport':("srcport","uint16"), #Source Port
-                'tcp.stream':("strmind","uint32"), #Stream index
-                'tcp.urgent_pointer':("urgpoint","uint16"), #Urgent Pointer
-                'tcp.window_size':("windsize","uint32"), #Calculated window size
-                'tcp.window_size_scalefactor':("windsizescale","uint32"), #Window size scaling factor
-                'tcp.window_size_value':("wind","uint16"), #Window
-                 "tcp.options": ("opt","byteseq"), #TCP Options
-                    "tcp.payload": ("payload","byteseq"), #TCP payload
-                     "tcp.reassembled.data": ("realdata","byteseq"), #Reassembled TCP Data
-                     "tcp.segment_data": ("segdata","byteseq"), #TCP segment data
-                    })
-    trees = util.DataFrame.__dict__['trees'] + ["tcp.analysis", #SEQ/ACK analysis (Label)
-                                                "tcp.flags_tree", "tcp.options_tree"
-                                                ]
+tmp = {"tcp.ack":("ack","uint32"), #Acknowledgement number
+        "tcp.ack_raw":("ackraw","uint32"), #Acknowledgement number (raw)
+        'tcp.analysis':"Specialtree", #SEQ/ACK analysis (Label)
+        "tcp.checksum":("check","uint16"), #Checksum
+        "tcp.checksum.status":("checkstat","uint8"), #Checksum status
+        'tcp.completeness':("completeness","uint8"), #Conversation completeness
+        'tcp.dstport':("dstport","uint16"), #Destination port
+        "tcp.flags": ("flags","uint16"), #Flags
+        "tcp.flags_tree":"Specialtree",
+        'tcp.hdr_len':("hdr_len","uint8"), #Header Length
+        'tcp.len':("len","uint32"), #TCP Segment Len
+        'tcp.nxtseq':("nxtseq","uint32"), #Next Sequence Number
+        'tcp.options': ("opt","byteseq"), #TCP Options
+        'tcp.options_tree':"Specialtree",
+        'tcp.payload': ("payload","byteseq"), #TCP payload
+        'tcp.pdu.size': ("PDU_size","uint32"), #PDU Size
+        'tcp.port':("port","uint16"), #Source or Destination Port
+        'tcp.reassembled.data': ("realdata","byteseq"), #Reassembled TCP Data 
+        'tcp.reassembled.length':("reasslen","uint32"), #Reassembled TCP length
+        'tcp.reassembled_in':('reassref','framenum'), #Reassembled PDU in frame
+        'tcp.segment': ('segment','framenum'), #TCP Segment
+        'tcp.segment.count':("segcount","uint32"), #Segment count
+        'tcp.segment_data': ("segdata","byteseq"), #TCP segment data
+        'tcp.seq':("seqnum","uint32"), #Sequence Number
+        'tcp.seq_raw':("seqnumraw","uint32"), #Sequence Number (raw)
+        'tcp.srcport':("srcport","uint16"), #Source Port
+        'tcp.stream':("strmind","uint32"), #Stream index
+        'tcp.urgent_pointer':("urgpoint","uint16"), #Urgent Pointer
+        'tcp.window_size':("windsize","uint32"), #Calculated window size
+        'tcp.window_size_scalefactor':("windsizescale","uint32"), #Window size scaling factor
+        'tcp.window_size_value':("wind","uint16"), #Window 
+            }
+class TCP(util.DataFrame, keyvals=tmp): #Transmission Control Protocol
     typ = "TCP"
     def doMoarInit(self):
-        for i in self.data:
-            if i in self.keyvals:
-                continue
-            elif 'tcp.' == i[0:4]:
-                match i[4:]: #tcp.X
-                    case 'reassembled_in': #Reassembled PDU in frame (Frame number)
-                        self.reassref = int(self.data[i])
-                    case 'segment': #TCP Segment (Frame number)
-                        self.segment = int(self.data[i])
-                    case _:
-                        print("Unknown TCP key", i)
-            else:
-                match i:
-                    case _:
-                        print("Unknown TCP key", i)
-
+        if 'type' not in self.__dict__:
+            self.type = "EST?"
     def __str__(self): # https://en.wikipedia.org/wiki/Transmission_Control_Protocol
         builder = '-'*50+'TCP'+'-'*50+'\n'
         builder += " "*10 + "HEADER"+"\n"
+        builder += "Frame number: "+str(self.framenum)+"\n"
         builder += "Source Port: "+str(self.srcport)+" | Destination Port: "+ str(self.dstport)
-        builder += " | Sequence Number: "+str(self.seqnum)+ " | Acknowledgement Number: "+str(self.ack)+"\n"
+        builder += " | Type: "+str(self.type)+'\n'
+        builder += "Sequence Number: "+str(self.seqnum)+ " | Acknowledgement Number: "+str(self.ack)+"\n"
         builder += "Data Offset: "+str(self.hdr_len)+" | Flags - CWR:" 
         if self.flags_cwr: builder += "Y"
         else: builder += "N"
@@ -680,8 +670,18 @@ class TCP(util.DataFrame): #Transmission Control Protocol
                     self.doProcessExpert(i, tree[i], self.expertnumber)
                     continue
                 match i:
+                    case 'tcp.connection.fin': #Connection finish (FIN) (Label)
+                        self.type = "FIN"
+                    case 'tcp.connection.fin_active': #This frame initiates the connection closing
+                        self.fintype = 'ACTIVE'
+                    case 'tcp.connection.fin_passive': #This frame undergoes the connection closing
+                        self.fintype = 'PASSIVE'
+                    case 'tcp.connection.rst': #Connection reset (RST) (Label)
+                        self.type = "RST"
                     case 'tcp.connection.syn': #Connection establish request (SYN) (Label)
                         self.type = "SYN"
+                    case 'tcp.connection.synack': #Connection establish acknowledge (SYN+ACK) (Label)
+                        self.type = "SYNACK"
                     case _:
                         print("Unknown key in tcp expert key",i,"packet proto is TCP, value is",tree[i])
         elif treename == 'tcp.analysis': #SEQ/ACK analysis (Label)
@@ -869,7 +869,7 @@ class TCP(util.DataFrame): #Transmission Control Protocol
                     case _:
                         print("Unknown TCP key in Timestamps  tree", i)
         else:
-            print("Unknown TCP tree", treename)
+            raise Exception(f"Unknown TCP tree {treename}")
 
 class TCPSegments(TCP):
     typ = "TCPSegments" 
